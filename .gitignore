@@ -1,0 +1,36 @@
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# 本机配置与密钥
+.env
+.env.*
+!.env.example
+
+# 用户数据与运行产物
+data/
+papers/
+chroma/
+logs/
+exports/
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+.tmp/
+.uv-cache/
+_wheels/
+_pip_*.log
+_uv_*.log
+evaluation/results/
+jieba.cache
+tmp*/
+
+# 编辑器
+.vscode/
+.idea/
+# 文档不上传
+docs/*.md

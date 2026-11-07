@@ -1,0 +1,4 @@
+{"question_id": "q_demo_001", "paper_ids": ["paper_001"], "question": "这篇论文主要讨论了哪些评估维度？", "question_type": "fact", "answerable": true, "gold_chunk_ids": [], "gold_evidence_groups": [], "reference_note": "示例：用 evaluation/annotate.py 找到支撑片段后填入 gold_chunk_ids"}
+{"question_id": "q_demo_002", "paper_ids": ["paper_001"], "question": "论文中提到的 RAG 基础范式有哪些？", "question_type": "method", "answerable": true, "gold_chunk_ids": [], "gold_evidence_groups": [], "reference_note": "示例：待标注"}
+{"question_id": "q_demo_003", "paper_ids": ["paper_001"], "question": "论文是否报告了作者自己开展的实验？", "question_type": "relation", "answerable": true, "gold_chunk_ids": [], "gold_evidence_groups": [], "reference_note": "示例：待标注"}
+{"question_id": "q_demo_004", "paper_ids": ["paper_001"], "question": "这篇论文使用了什么 GPU 集群配置？", "question_type": "unanswerable", "answerable": false, "gold_chunk_ids": [], "gold_evidence_groups": [], "reference_note": "示例：论文未涉及，应明确说明证据不足"}
