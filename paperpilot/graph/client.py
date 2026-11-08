@@ -159,33 +159,40 @@ class Neo4jClient:
             ) from exc
 
     def write_claim(self, claim: dict[str, Any]) -> None:
+        self.write_claims([claim])
+
+    def write_claims(self, claims: list[dict[str, Any]]) -> None:
+        """批量写入关系声明：一条 UNWIND 语句替代逐条往返，显著缩短构图时间。"""
+        if not claims:
+            return
         query = """
-        MERGE (p:Paper {paper_id: $paper_id})
-          SET p.workspace_id = $workspace_id, p.revision = $revision,
-              p.title = $title
-        MERGE (c:Chunk {chunk_id: $chunk_id})
-          SET c.workspace_id = $workspace_id, c.paper_id = $paper_id,
-              c.revision = $revision, c.page_number = $page_number,
-              c.text_hash = $text_hash
-        MERGE (s:Entity {entity_id: $subject_id})
-          ON CREATE SET s.workspace_id = $workspace_id,
-                        s.entity_type = $subject_type,
-                        s.canonical_name = $subject_name,
-                        s.normalization_version = $normalization_version
-        MERGE (o:Entity {entity_id: $object_id})
-          ON CREATE SET o.workspace_id = $workspace_id,
-                        o.entity_type = $object_type,
-                        o.canonical_name = $object_name,
-                        o.normalization_version = $normalization_version
-        MERGE (cl:Claim {claim_id: $claim_id})
-          ON CREATE SET cl.workspace_id = $workspace_id,
-                        cl.paper_id = $paper_id,
-                        cl.revision = $revision,
-                        cl.relation_type = $relation_type,
-                        cl.extractor_version = $extractor_version,
-                        cl.qualifiers_json = $qualifiers_json
-          SET cl.status = $status,
-              cl.evidence_text = $evidence_text
+        UNWIND $claims AS claim
+        MERGE (p:Paper {paper_id: claim.paper_id})
+          SET p.workspace_id = claim.workspace_id, p.revision = claim.revision,
+              p.title = claim.title
+        MERGE (c:Chunk {chunk_id: claim.chunk_id})
+          SET c.workspace_id = claim.workspace_id, c.paper_id = claim.paper_id,
+              c.revision = claim.revision, c.page_number = claim.page_number,
+              c.text_hash = claim.text_hash
+        MERGE (s:Entity {entity_id: claim.subject_id})
+          ON CREATE SET s.workspace_id = claim.workspace_id,
+                        s.entity_type = claim.subject_type,
+                        s.canonical_name = claim.subject_name,
+                        s.normalization_version = claim.normalization_version
+        MERGE (o:Entity {entity_id: claim.object_id})
+          ON CREATE SET o.workspace_id = claim.workspace_id,
+                        o.entity_type = claim.object_type,
+                        o.canonical_name = claim.object_name,
+                        o.normalization_version = claim.normalization_version
+        MERGE (cl:Claim {claim_id: claim.claim_id})
+          ON CREATE SET cl.workspace_id = claim.workspace_id,
+                        cl.paper_id = claim.paper_id,
+                        cl.revision = claim.revision,
+                        cl.relation_type = claim.relation_type,
+                        cl.extractor_version = claim.extractor_version,
+                        cl.qualifiers_json = claim.qualifiers_json
+          SET cl.status = claim.status,
+              cl.evidence_text = claim.evidence_text
         MERGE (cl)-[:SUBJECT]->(s)
         MERGE (cl)-[:OBJECT]->(o)
         MERGE (cl)-[:SUPPORTED_BY]->(c)
@@ -194,7 +201,9 @@ class Neo4jClient:
         """
         try:
             with self._session() as session:
-                session.execute_write(lambda tx: tx.run(query, **claim).consume())
+                session.execute_write(
+                    lambda tx: tx.run(query, claims=claims).consume()
+                )
         except Exception as exc:
             raise GraphError("图谱写入失败，请检查连接后重试", "GRAPH_WRITE_FAILED") from exc
 

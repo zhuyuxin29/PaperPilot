@@ -111,6 +111,26 @@ class SiliconFlowEmbeddingTest(unittest.TestCase):
             self._provider(fake_post).embed(["x"])
         self.assertEqual(ctx.exception.code, "EMBEDDING_NETWORK")
 
+    def test_retries_transient_status(self) -> None:
+        calls = {"count": 0}
+
+        def fake_post(url, json=None, headers=None, timeout=None):
+            calls["count"] += 1
+            if calls["count"] == 1:
+                return FakeResponse(status_code=503, text="busy")
+            return FakeResponse(
+                payload={
+                    "data": [
+                        {"index": index, "embedding": [0.1, 0.2, 0.3, 0.4]}
+                        for index in range(len(json["input"]))
+                    ]
+                }
+            )
+
+        vectors = self._provider(fake_post).embed(["a"])
+        self.assertEqual(len(vectors), 1)
+        self.assertEqual(calls["count"], 2)
+
     def test_empty_input(self) -> None:
         self.assertEqual(self._provider(lambda *a, **k: None).embed([]), [])
 

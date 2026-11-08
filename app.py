@@ -534,15 +534,22 @@ def _render_import_popover(
             if st.button("开始入库", type="primary", key="sidebar_ingest"):
                 if _http_mode(settings):
                     try:
-                        paper = _api_client(settings).upload_paper(
-                            uploaded.getvalue(), uploaded.name
+                        client = _api_client(settings)
+                        paper = client.upload_paper(
+                            uploaded.getvalue(), uploaded.name, background=True
                         )
+                        if paper.get("state") in ("parsing", "uploaded"):
+                            with st.spinner("后端正在解析、向量化并建索引…"):
+                                paper = client.wait_for_paper(paper["id"])
                     except ApiError as exc:
                         st.error(f"入库失败：{exc.message}")
                     else:
-                        st.session_state["current_paper"] = paper["id"]
-                        st.success(f"入库完成：{paper['id']}")
-                        st.switch_page(CHAT_PAGE)
+                        if paper.get("state") == "failed":
+                            st.error("入库失败，请检查 PDF 或后端日志。")
+                        else:
+                            st.session_state["current_paper"] = paper["id"]
+                            st.success(f"入库完成：{paper['id']}")
+                            st.switch_page(CHAT_PAGE)
                 else:
                     try:
                         result = services.prepare_paper(
@@ -656,8 +663,6 @@ def _render_chat_page(
     else:
         main_col, source_col = st.container(), None
     with main_col:
-        _poll_pending(settings, conn)
-
         chats = st.session_state.setdefault("chats", {})
         if paper_id not in chats or not st.session_state.get("pending"):
             chats[paper_id] = _load_chat_history(settings, paper_id)
@@ -677,26 +682,7 @@ def _render_chat_page(
                 st.rerun()
         pending = st.session_state.get("pending")
         if pending and pending.get("paper_id") == paper_id:
-            if pending["thread"].is_alive():
-                label = (
-                    "正在请求后端…"
-                    if _http_mode(settings)
-                    else "正在检索与取证…"
-                )
-                with st.status(label, expanded=True) as status:
-                    if _http_mode(settings):
-                        st.write("API 模式：等待后端完成本次问答。")
-                    else:
-                        st.write("Agent 正在检索、回读原文并校验引用。")
-                        if st.button("停止", key=f"stop_{paper_id}"):
-                            pending["cancel"].set()
-                            status.update(label="正在停止…", state="running")
-                            st.rerun()
-                time.sleep(0.4)
-                st.rerun()
-            else:
-                _finalize_pending(settings, conn)
-                st.rerun()
+            _pending_poller(settings, conn, paper_id)
 
         question = st.chat_input(
             "输入你对这篇论文的问题……", key=f"chat_input_{paper_id}",
@@ -731,7 +717,7 @@ def _render_pdf_page(
 def _render_source_panel(
     settings: Settings, conn: sqlite3.Connection, paper_id: str
 ) -> None:
-    """右侧原文栏：整篇 PDF 连续滚动 + 缩放 + 收起。"""
+    """右侧原文栏：按页查看 PDF（只渲染当前页）＋缩放＋收起。"""
     info = _paper_info(settings, conn, paper_id)
     if info is None:
         return
@@ -786,22 +772,35 @@ def _render_source_panel(
         pdf_path = str(path)
 
     zoom = int(st.session_state.get(f"source_zoom_{paper_id}", 100))
+    page_key = f"source_page_{paper_id}"
+    current_page = int(st.session_state.get(page_key, 1))
+    current_page = max(1, min(page_count, current_page))
+    if page_count > 1:
+        current_page = int(
+            st.slider(
+                "页码",
+                min_value=1,
+                max_value=page_count,
+                value=current_page,
+                key=page_key,
+            )
+        )
+    st.caption(f"第 {current_page} / {page_count} 页")
 
-    parts = ['<div class="pp-pdf-view">']
-    for index in range(page_count):
-        image = _render_pdf_page(pdf_path, index)
-        if image is None:
-            continue
+    # 只渲染当前页，避免每次 rerun 把所有页都转成 base64 塞进 HTML。
+    image = _render_pdf_page(pdf_path, current_page - 1)
+    if image is None:
+        st.info("这一页暂时无法渲染。")
+    else:
         encoded = base64.b64encode(image).decode("ascii")
-        parts.append(
+        st.markdown(
+            '<div class="pp-pdf-view">'
             f'<img src="data:image/png;base64,{encoded}" '
-            f'style="width:{zoom}%" alt="第 {index + 1} 页">'
+            f'style="width:{zoom}%" alt="第 {current_page} 页">'
+            f'<div class="pp-pdf-page-no">第 {current_page} 页</div>'
+            "</div>",
+            unsafe_allow_html=True,
         )
-        parts.append(
-            f'<div class="pp-pdf-page-no">第 {index + 1} 页</div>'
-        )
-    parts.append("</div>")
-    st.markdown("".join(parts), unsafe_allow_html=True)
     _render_pdf_button(
         settings, paper_id, label="下载 PDF", key=f"pdf_side_{paper_id}"
     )
@@ -848,6 +847,33 @@ def _poll_pending(settings: Settings, conn: sqlite3.Connection) -> None:
     if not pending or pending["thread"].is_alive():
         return
     _finalize_pending(settings, conn)
+
+
+def _render_pending_status(settings: Settings, pending: dict, paper_id: str) -> None:
+    label = (
+        "正在请求后端…" if _http_mode(settings) else "正在检索与取证…"
+    )
+    with st.status(label, expanded=True) as status:
+        if _http_mode(settings):
+            st.write("API 模式：等待后端完成本次问答。")
+        else:
+            st.write("Agent 正在检索、回读原文并校验引用。")
+            if st.button("停止", key=f"stop_{paper_id}"):
+                pending["cancel"].set()
+                status.update(label="正在停止…", state="running")
+
+
+@st.fragment(run_every=0.8)
+def _pending_poller(settings: Settings, conn: sqlite3.Connection, paper_id: str) -> None:
+    """局部轮询后台问答任务，避免整页 rerun。"""
+    pending = st.session_state.get("pending")
+    if not pending or pending.get("paper_id") != paper_id:
+        return
+    if pending["thread"].is_alive():
+        _render_pending_status(settings, pending, paper_id)
+        return
+    _poll_pending(settings, conn)
+    st.rerun()
 
 
 def _finalize_pending(

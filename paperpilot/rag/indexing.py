@@ -16,6 +16,7 @@ import re
 import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
@@ -135,6 +136,19 @@ def build_paper_index(
     )
 
 
+@lru_cache(maxsize=16)
+def _read_index_file(
+    path_text: str, mtime_ns: int, size: int
+) -> tuple[tuple[str, ...], np.ndarray, str, int]:
+    """按（路径, mtime, 大小）缓存磁盘索引；文件被替换后键自动失效。"""
+    with np.load(path_text, allow_pickle=False) as data:
+        chunk_ids = tuple(str(item) for item in data["chunk_ids"].tolist())
+        vectors = np.array(data["vectors"], dtype=np.float32, copy=True)
+        provider_name = str(data["provider"].item())
+        dimension = int(data["dimension"].item())
+    return chunk_ids, vectors, provider_name, dimension
+
+
 def load_index(
     settings: Settings,
     paper_id: str,
@@ -147,11 +161,10 @@ def load_index(
     if not path.is_file():
         return None
 
-    with np.load(path, allow_pickle=False) as data:
-        chunk_ids = tuple(str(item) for item in data["chunk_ids"].tolist())
-        vectors = np.asarray(data["vectors"], dtype=np.float32)
-        provider_name = str(data["provider"].item())
-        dimension = int(data["dimension"].item())
+    stat = path.stat()
+    chunk_ids, vectors, provider_name, dimension = _read_index_file(
+        str(path), stat.st_mtime_ns, stat.st_size
+    )
 
     if provider is not None and (
         provider_name != provider.name or dimension != provider.dimension
@@ -196,9 +209,15 @@ def build_all_indexes(
     for paper in storage.list_papers(conn):
         if selected is not None and paper.id not in selected:
             continue
-        metas.append(
-            build_paper_index(conn, settings, provider, paper.id, paper.revision)
-        )
+        try:
+            metas.append(
+                build_paper_index(conn, settings, provider, paper.id, paper.revision)
+            )
+        except IndexBuildError as exc:
+            # 零片段论文不应让整批重建中断；其余错误照常抛出。
+            if exc.code == "NO_CHUNKS":
+                continue
+            raise
     return metas
 
 

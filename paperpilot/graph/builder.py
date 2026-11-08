@@ -58,17 +58,18 @@ def build_paper_graph(
         chunks = chunks[: max(1, max_chunks)]
 
     client.ensure_schema()
-    claims = extractor.extract_claims(chat, chunks, batch_size=batch_size)
+    claims = extractor.extract_claims(
+        chat,
+        chunks,
+        batch_size=batch_size,
+        cache_dir=settings.data_dir / "graph_cache",
+    )
     # 抽取成功后再清空旧图，避免抽取失败把已有图谱删掉
     if hasattr(client, "clear_paper_graph"):
         client.clear_paper_graph(WORKSPACE_ID, paper_id)
 
     chunk_map = {chunk.chunk_id: chunk for chunk in chunks}
-    validated = 0
-    pending = 0
-    errors: list[str] = []
-    entities: set[str] = set()
-
+    records: list[dict] = []
     for claim in claims:
         chunk = chunk_map.get(claim.chunk_id)
         if chunk is None:
@@ -85,7 +86,7 @@ def build_paper_graph(
             claim.evidence_text,
         )
         status = "validated" if claim.evidence_aligned else "pending_review"
-        record = {
+        records.append({
             "workspace_id": WORKSPACE_ID,
             "paper_id": paper_id,
             "revision": revision,
@@ -106,17 +107,32 @@ def build_paper_graph(
             "qualifiers_json": _json_dumps(claim.qualifiers),
             "extractor_version": EXTRACTOR_VERSION,
             "normalization_version": EXTRACTOR_VERSION,
-        }
+        })
+
+    validated = 0
+    pending = 0
+    errors: list[str] = []
+    entities: set[str] = set()
+
+    # 批量写入：真实客户端用 UNWIND，单事务多 claim；测试/自定义客户端逐条回退。
+    batch_size = 40
+    for start in range(0, len(records), batch_size):
+        batch = records[start : start + batch_size]
         try:
-            client.write_claim(record)
+            if hasattr(client, "write_claims"):
+                client.write_claims(batch)
+            else:
+                for record in batch:
+                    client.write_claim(record)
         except GraphError as exc:
-            errors.append(f"{claim.relation_type}: {exc.message}")
+            errors.append(f"图谱写入失败（{len(batch)} 条）：{exc.message}")
             continue
-        entities.update({subject_id, object_id})
-        if status == "validated":
-            validated += 1
-        else:
-            pending += 1
+        for record in batch:
+            entities.update({record["subject_id"], record["object_id"]})
+            if record["status"] == "validated":
+                validated += 1
+            else:
+                pending += 1
 
     total = validated + pending
     if errors and total == 0:

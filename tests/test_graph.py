@@ -193,6 +193,26 @@ class BuilderTest(GraphTestBase):
         second = entity_id(WORKSPACE_ID, "Method", "  methoda ")
         self.assertEqual(first, second)
 
+    def test_rebuild_reuses_extraction_cache(self) -> None:
+        # 第一次构建写入抽取缓存；第二次用没有内容的 FakeChat 重建也不再调模型。
+        build_paper_graph(
+            self.conn,
+            self.settings,
+            FakeChat([self._claims_payload()]),
+            FakeClient(),
+            self.paper.id,
+        )
+        client = FakeClient()
+        result = build_paper_graph(
+            self.conn,
+            self.settings,
+            FakeChat([]),
+            client,
+            self.paper.id,
+        )
+        self.assertEqual(result.claims_total, 2)
+        self.assertEqual(len(client.claims), 2)
+
 
 class QueryGraphToolTest(GraphTestBase):
     def test_tool_description_targets_relation_questions(self) -> None:

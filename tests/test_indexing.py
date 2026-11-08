@@ -66,7 +66,6 @@ class BuildAndLoadTest(IndexingTestBase):
         meta = indexing.build_paper_index(
             self.conn, self.settings, self.provider, "paper_001"
         )
-
         self.assertTrue(meta.path.is_file())
         self.assertEqual(meta.provider, "hash")
         self.assertEqual(meta.dimension, 8)
@@ -80,6 +79,17 @@ class BuildAndLoadTest(IndexingTestBase):
         self.assertEqual(data.vectors.shape, (len(chunks), 8))
         norms = np.linalg.norm(data.vectors, axis=1)
         self.assertTrue(np.allclose(norms, 1.0, atol=1e-5))
+
+    def test_build_all_skips_zero_chunk_paper(self) -> None:
+        self.save_document("paper_001")
+        paper, pages, chunks = make_document(
+            paper_id="paper_002", texts=(), sha256="b" * 64
+        )
+        storage.save_document(self.conn, paper, pages, chunks)
+        metas = indexing.build_all_indexes(
+            self.conn, self.settings, self.provider
+        )
+        self.assertEqual([meta.paper_id for meta in metas], ["paper_001"])
 
     def test_rebuild_is_idempotent(self) -> None:
         self.save_document()

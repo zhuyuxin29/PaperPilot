@@ -6,14 +6,18 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import re
+import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Sequence
 
 from ..llm import ChatMessage, ChatProvider
 from ..schemas import Chunk
-from .client import GraphError
+from .client import EXTRACTOR_VERSION, GraphError
 
 # 每种关系允许的主语/宾语类型
 EXPECTED_TYPES: dict[str, tuple[set[str], set[str]]] = {
@@ -78,22 +82,70 @@ def extract_claims(
     chunks: Sequence[Chunk],
     *,
     batch_size: int = 5,
+    cache_dir: Path | None = None,
 ) -> list[ExtractedClaim]:
-    """按批次抽取关系声明；模型输出不合法时抛 ``GraphError``。"""
+    """按批次抽取关系声明；模型输出不合法时抛 ``GraphError``。
+
+    传入 ``cache_dir`` 时按（模型 + 抽取版本 + 批次原文）缓存模型输出，
+    图谱重建且片段未变化时不再重复调用模型。
+    """
     claims: list[ExtractedClaim] = []
-    for start in range(0, len(chunks), max(1, batch_size)):
-        batch = list(chunks[start : start + max(1, batch_size)])
-        messages = [
-            ChatMessage(role="system", content=SYSTEM_PROMPT),
-            ChatMessage(role="user", content=_materials(batch)),
-        ]
-        response = chat.chat(messages)
-        payload = _parse_json(response.message.content or "")
+    step = max(1, batch_size)
+    for start in range(0, len(chunks), step):
+        batch = list(chunks[start : start + step])
+        payload = _extract_batch(chat, batch, cache_dir)
         for raw in payload.get("claims") or []:
             claim = _build_claim(raw, batch)
             if claim is not None:
                 claims.append(claim)
     return claims
+
+
+def _cache_path(cache_dir: Path, chat: ChatProvider, batch: Sequence[Chunk]) -> Path:
+    digest = hashlib.sha256()
+    digest.update(EXTRACTOR_VERSION.encode("utf-8"))
+    digest.update(b"|")
+    digest.update(
+        str(getattr(chat, "model", "") or getattr(chat, "name", "")).encode("utf-8")
+    )
+    digest.update(b"|")
+    for chunk in batch:
+        digest.update(chunk.chunk_id.encode("utf-8"))
+        digest.update(b"\x1f")
+        digest.update(chunk.text.encode("utf-8"))
+        digest.update(b"\x1e")
+    return cache_dir / f"{digest.hexdigest()}.json"
+
+
+def _extract_batch(
+    chat: ChatProvider, batch: Sequence[Chunk], cache_dir: Path | None
+) -> dict:
+    path = _cache_path(cache_dir, chat, batch) if cache_dir is not None else None
+    if path is not None:
+        try:
+            cached = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            cached = None
+        if isinstance(cached, dict):
+            return cached
+
+    messages = [
+        ChatMessage(role="system", content=SYSTEM_PROMPT),
+        ChatMessage(role="user", content=_materials(batch)),
+    ]
+    response = chat.chat(messages)
+    payload = _parse_json(response.message.content or "")
+    if path is not None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_name(path.name + f".{uuid.uuid4().hex}.tmp")
+            tmp.write_text(
+                json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+            )
+            os.replace(tmp, path)
+        except OSError:
+            pass  # 缓存失败不影响抽取结果
+    return payload
 
 
 def _materials(batch: Sequence[Chunk]) -> str:

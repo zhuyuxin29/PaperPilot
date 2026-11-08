@@ -16,6 +16,7 @@ import hashlib
 import json
 import math
 import re
+import time
 from dataclasses import dataclass
 from typing import Any, Callable, Protocol, Sequence
 
@@ -27,6 +28,53 @@ DEFAULT_BASE_URL = "https://api.siliconflow.cn/v1"
 DEFAULT_MODEL = "BAAI/bge-m3"
 DEFAULT_DIMENSION = 1024
 _BATCH_SIZE = 32
+
+# 复用连接池；仅对网络错误和限流/暂时性 5xx 做有限重试。
+_SESSION = requests.Session()
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
+_MAX_ATTEMPTS = 3
+_BACKOFF_BASE = 0.15
+
+
+def _sleep_backoff(attempt: int, response: object | None = None) -> None:
+    delay = _BACKOFF_BASE * (2 ** attempt)
+    headers = getattr(response, "headers", None) or {}
+    retry_after = headers.get("Retry-After") if hasattr(headers, "get") else None
+    if retry_after is not None:
+        try:
+            delay = max(delay, float(retry_after))
+        except (TypeError, ValueError):
+            pass
+    time.sleep(min(delay, 2.0))
+
+
+def _post_with_retry(
+    post: Callable[..., object],
+    url: str,
+    *,
+    json: dict,
+    headers: dict,
+    timeout: float,
+) -> object:
+    """统一 POST 重试：网络异常、429 与 5xx 最多尝试 3 次。"""
+    last_error: Exception | None = None
+    for attempt in range(_MAX_ATTEMPTS):
+        try:
+            response = post(url, json=json, headers=headers, timeout=timeout)
+        except requests.RequestException as exc:
+            last_error = exc
+            if attempt + 1 >= _MAX_ATTEMPTS:
+                raise
+            _sleep_backoff(attempt)
+            continue
+        status = int(getattr(response, "status_code", 0))
+        if status in _RETRY_STATUS and attempt + 1 < _MAX_ATTEMPTS:
+            _sleep_backoff(attempt, response)
+            continue
+        return response
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError("HTTP 请求重试失败")
 
 _ASCII_WORD = re.compile(r"[a-z0-9][a-z0-9._-]*")
 _CJK_CHAR = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
@@ -98,7 +146,7 @@ class SiliconFlowEmbedding:
         dimension: int = DEFAULT_DIMENSION,
         timeout: float = 60.0,
         batch_size: int = _BATCH_SIZE,
-        post: Callable[..., object] = requests.post,
+        post: Callable[..., object] | None = None,
     ) -> None:
         if not api_key:
             raise EmbeddingError(
@@ -115,7 +163,7 @@ class SiliconFlowEmbedding:
         self.dimension = dimension
         self.timeout = timeout
         self.batch_size = max(1, batch_size)
-        self._post = post
+        self._post = post or _SESSION.post
 
     def embed(self, texts: Sequence[str]) -> list[list[float]]:
         if not texts:
@@ -133,7 +181,8 @@ class SiliconFlowEmbedding:
             "Content-Type": "application/json",
         }
         try:
-            response = self._post(
+            response = _post_with_retry(
+                self._post,
                 f"{self.base_url}/embeddings",
                 json=payload,
                 headers=headers,
@@ -266,7 +315,7 @@ class OpenAICompatibleChat:
         model: str,
         base_url: str,
         timeout: float = 60.0,
-        post: Callable[..., object] = requests.post,
+        post: Callable[..., object] | None = None,
     ) -> None:
         if not api_key:
             raise ChatError("未配置对话模型 API Key", "CHAT_NOT_CONFIGURED")
@@ -279,7 +328,7 @@ class OpenAICompatibleChat:
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
         self.name = f"openai-compatible:{model}"
-        self._post = post
+        self._post = post or _SESSION.post
 
     def chat(
         self,
@@ -302,7 +351,8 @@ class OpenAICompatibleChat:
             "Content-Type": "application/json",
         }
         try:
-            response = self._post(
+            response = _post_with_retry(
+                self._post,
                 f"{self.base_url}/chat/completions",
                 json=payload,
                 headers=headers,

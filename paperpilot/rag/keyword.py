@@ -23,6 +23,7 @@ import sqlite3
 import time
 from collections import Counter
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Sequence
 
@@ -173,14 +174,13 @@ def build_keyword_index(
     )
 
 
-def load_keyword_index(
-    settings: Settings, paper_id: str, revision: int
+@lru_cache(maxsize=16)
+def _read_keyword_file(
+    path_text: str, mtime_ns: int, size: int
 ) -> KeywordIndex | None:
-    path = index_path(settings, paper_id, revision)
-    if not path.is_file():
-        return None
+    """按（路径, mtime, 大小）缓存 BM25 索引，避免 Agent 多轮检索反复读 JSON。"""
     try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload = json.loads(Path(path_text).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return None
     if payload.get("tokenizer_version") != TOKENIZER_VERSION:
@@ -198,6 +198,16 @@ def load_keyword_index(
         )
     except (KeyError, TypeError, ValueError):
         return None
+
+
+def load_keyword_index(
+    settings: Settings, paper_id: str, revision: int
+) -> KeywordIndex | None:
+    path = index_path(settings, paper_id, revision)
+    if not path.is_file():
+        return None
+    stat = path.stat()
+    return _read_keyword_file(str(path), stat.st_mtime_ns, stat.st_size)
 
 
 def keyword_search(
