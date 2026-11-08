@@ -7,6 +7,7 @@ import os
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -159,6 +160,121 @@ class PaperApiTest(ApiTestBase):
         response = self.client.get("/papers/paper_999/pdf")
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.json()["detail"]["code"], "PAPER_NOT_FOUND")
+
+    def test_upload_size_limit_rejected_before_full_read(self) -> None:
+        with patch("api.main.pipeline.MAX_PDF_BYTES", 10):
+            response = self.client.post(
+                "/papers",
+                files={"file": ("a.pdf", CLEAN_PDF, "application/pdf")},
+            )
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["detail"]["code"], "FILE_TOO_LARGE")
+        self.assertEqual(self.client.get("/papers").json(), [])
+
+    def test_blank_pdf_rejected_as_no_chunks(self) -> None:
+        blank = build_pdf([None])
+        response = self.client.post(
+            "/papers", files={"file": ("blank.pdf", blank, "application/pdf")}
+        )
+        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.json()["detail"]["code"], "NO_CHUNKS")
+        self.assertEqual(self.client.get("/papers").json(), [])
+
+    def test_ingest_internal_error_is_sanitized(self) -> None:
+        with patch(
+            "api.main.services.prepare_paper",
+            side_effect=RuntimeError("secret /internal/path"),
+        ):
+            response = self.client.post(
+                "/papers",
+                files={"file": ("a.pdf", CLEAN_PDF, "application/pdf")},
+            )
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn("secret", response.text)
+        self.assertNotIn("internal/path", response.text)
+        self.assertEqual(response.json()["detail"]["code"], "INGEST_FAILED")
+
+    def test_corrupted_summary_cache_is_sanitized(self) -> None:
+        paper = self.upload()
+        from paperpilot.summary.generator import (
+            current_summary_model,
+            summary_path,
+        )
+
+        settings = get_settings()
+        path = summary_path(
+            settings, paper["id"], paper["revision"],
+            current_summary_model(settings),
+        )
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("this is not json", encoding="utf-8")
+
+        response = self.client.get(f"/papers/{paper['id']}/summary")
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response.json()["detail"]["code"], "SUMMARY_BROKEN")
+        self.assertNotIn("this is not json", response.text)
+
+    def test_reprocess_internal_error_is_sanitized(self) -> None:
+        paper = self.upload()
+        with patch(
+            "api.main.services.reprocess_paper",
+            side_effect=RuntimeError("secret /internal/path"),
+        ):
+            response = self.client.post(f"/papers/{paper['id']}/reprocess")
+        self.assertEqual(response.status_code, 500)
+        self.assertNotIn("secret", response.text)
+        self.assertEqual(response.json()["detail"]["code"], "REPROCESS_FAILED")
+
+    def test_list_does_not_query_graph_state_per_paper(self) -> None:
+        self.upload()
+        with patch("api.main.storage.get_graph_state") as get_graph_state:
+            response = self.client.get("/papers")
+        self.assertEqual(response.status_code, 200)
+        get_graph_state.assert_not_called()
+
+    def test_background_upload_polls_until_ready(self) -> None:
+        import time
+
+        response = self.client.post(
+            "/papers?background=true",
+            files={"file": ("a.pdf", CLEAN_PDF, "application/pdf")},
+        )
+        self.assertEqual(response.status_code, 202, response.text)
+        paper = response.json()
+        self.assertIn(paper["state"], ("parsing", "ready", "partial"))
+
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline:
+            current = self.client.get(f"/papers/{paper['id']}").json()
+            if current["state"] not in ("parsing", "uploaded"):
+                break
+            time.sleep(0.1)
+        self.assertEqual(current["state"], "ready", current)
+        self.assertEqual(current["page_count"], 2)
+        self.assertGreater(current["chunk_count"], 0)
+
+        from paperpilot import services
+
+        services.wait_for_background(paper["id"])
+
+    def test_chunk_endpoint_returns_current_revision(self) -> None:
+        paper = self.upload()
+        settings = get_settings()
+        conn = storage.connect(settings.db_path)
+        storage.ensure_schema(conn)
+        try:
+            chunk = storage.get_chunks(conn, paper["id"], paper["revision"])[0]
+        finally:
+            conn.close()
+
+        response = self.client.get(
+            f"/papers/{paper['id']}/chunks/{chunk.chunk_id}"
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        self.assertEqual(response.json()["chunk_id"], chunk.chunk_id)
+
+        missing = self.client.get(f"/papers/{paper['id']}/chunks/not-a-chunk")
+        self.assertEqual(missing.status_code, 404)
 
     def test_empty_upload_rejected(self) -> None:
         response = self.client.post(

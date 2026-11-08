@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import requests
@@ -84,12 +85,33 @@ class PaperPilotClient:
     def reprocess_paper(self, paper_id: str) -> dict:
         return self._request("POST", f"/papers/{paper_id}/reprocess")
 
-    def upload_paper(self, data: bytes, file_name: str) -> dict:
+    def upload_paper(
+        self, data: bytes, file_name: str, *, background: bool = False
+    ) -> dict:
+        params = {"background": "true"} if background else None
         return self._request(
             "POST",
             "/papers",
             files={"file": (file_name, data, "application/pdf")},
+            params=params,
         )
+
+    def wait_for_paper(
+        self, paper_id: str, *, timeout: float = 300.0, interval: float = 0.8
+    ) -> dict:
+        """轮询后台入库状态，直到不再是 parsing/uploaded；失败状态也返回。"""
+        deadline = time.monotonic() + timeout
+        while True:
+            paper = self.get_paper(paper_id)
+            if paper["state"] not in ("parsing", "uploaded"):
+                return paper
+            if time.monotonic() >= deadline:
+                raise ApiError(
+                    "后台入库超时，请稍后在文献列表中查看结果",
+                    "INGEST_TIMEOUT",
+                    0,
+                )
+            time.sleep(interval)
 
     def delete_paper(self, paper_id: str) -> None:
         self._request("DELETE", f"/papers/{paper_id}")

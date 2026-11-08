@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from functools import lru_cache
 from pathlib import Path
@@ -57,6 +58,44 @@ from .schemas import (
 )
 
 
+logger = logging.getLogger(__name__)
+_UPLOAD_CHUNK_BYTES = 1024 * 1024
+_GRAPH_STATE_UNSET = object()
+
+
+def _read_upload_limited(
+    upload: UploadFile, max_bytes: int | None = None
+) -> bytes:
+    """分块读取上传内容并在超限时立即拒绝，避免把大文件整体读进内存。"""
+    limit = pipeline.MAX_PDF_BYTES if max_bytes is None else max_bytes
+    declared = getattr(upload, "size", None)
+    if isinstance(declared, int) and declared > limit:
+        raise HTTPException(
+            status_code=413,
+            detail={
+                "code": "FILE_TOO_LARGE",
+                "message": f"文件超过大小上限（{limit} 字节）",
+            },
+        )
+    blocks: list[bytes] = []
+    total = 0
+    while True:
+        block = upload.file.read(_UPLOAD_CHUNK_BYTES)
+        if not block:
+            break
+        total += len(block)
+        if total > limit:
+            raise HTTPException(
+                status_code=413,
+                detail={
+                    "code": "FILE_TOO_LARGE",
+                    "message": f"文件超过大小上限（{limit} 字节）",
+                },
+            )
+        blocks.append(block)
+    return b"".join(blocks)
+
+
 @lru_cache
 def get_settings() -> Settings:
     settings = load_settings()
@@ -97,18 +136,27 @@ app.add_middleware(
 # ---------------------------------------------------------------- helpers
 
 
-def _paper_out(conn: sqlite3.Connection, paper) -> PaperOut:
-    pages = storage.get_pages(conn, paper.id, paper.revision)
-    chunks = storage.get_chunks(conn, paper.id, paper.revision)
-    graph_state = storage.get_graph_state(conn, paper.id)
+def _paper_out(
+    conn: sqlite3.Connection,
+    paper,
+    counts: tuple[int, int] | None = None,
+    graph_state: dict | None | object = _GRAPH_STATE_UNSET,
+) -> PaperOut:
+    page_count, chunk_count = (
+        counts if counts is not None else storage.get_paper_counts(
+            conn, paper.id, paper.revision
+        )
+    )
+    if graph_state is _GRAPH_STATE_UNSET:
+        graph_state = storage.get_graph_state(conn, paper.id)
     return PaperOut(
         id=paper.id,
         title=paper.title,
         file_name=paper.file_name,
         state=paper.state.value,
         revision=paper.revision,
-        page_count=len(pages),
-        chunk_count=len(chunks),
+        page_count=page_count,
+        chunk_count=chunk_count,
         graph_status=(
             str(graph_state["status"]) if graph_state else "not_built"
         ),
@@ -151,7 +199,14 @@ def health(settings: Settings = Depends(get_settings)) -> HealthOut:
 
 @app.get("/papers", response_model=list[PaperOut], tags=["papers"])
 def list_papers(conn: sqlite3.Connection = Depends(get_conn)) -> list[PaperOut]:
-    return [_paper_out(conn, paper) for paper in storage.list_papers(conn)]
+    counts = storage.list_paper_counts(conn)
+    graph_states = storage.list_graph_states(conn)
+    return [
+        _paper_out(
+            conn, paper, counts.get(paper.id), graph_states.get(paper.id)
+        )
+        for paper in storage.list_papers(conn)
+    ]
 
 
 @app.post(
@@ -163,20 +218,27 @@ def list_papers(conn: sqlite3.Connection = Depends(get_conn)) -> list[PaperOut]:
 def upload_paper(
     file: UploadFile = File(..., description="PDF 文件"),
     response: Response = None,
+    background: bool = False,
     settings: Settings = Depends(get_settings),
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> PaperOut:
-    data = file.file.read()
+    data = _read_upload_limited(file)
     if not data:
         raise HTTPException(
             status_code=400,
             detail={"code": "EMPTY_FILE", "message": "上传文件为空"},
         )
+    if background:
+        paper, started = services.start_background_ingest(
+            conn, settings, data, file.filename or "upload.pdf"
+        )
+        response.status_code = 202 if started else 200
+        return _paper_out(conn, paper)
     try:
         result = services.prepare_paper(
             data, file.filename or "upload.pdf", settings, conn
         )
-    except pipeline.IngestValidationError as exc:
+    except pipeline.IngestError as exc:
         raise HTTPException(
             status_code=400,
             detail={"code": exc.code, "message": exc.message},
@@ -185,9 +247,10 @@ def upload_paper(
         raise HTTPException(status_code=502, detail={"code": exc.code,
             "message": "原文已保留，向量索引未完成；检查模型配置后重新上传同一文件可重试。"}) from exc
     except Exception as exc:
+        logger.exception("上传入库失败")
         raise HTTPException(
             status_code=500,
-            detail={"code": "INGEST_FAILED", "message": str(exc)},
+            detail={"code": "INGEST_FAILED", "message": "入库失败，请稍后重试。"},
         ) from exc
     if result.duplicated:
         # 重复上传同一文件返回 200，而不是 201（未创建新资源）
@@ -250,10 +313,16 @@ def reprocess_paper(
         )
     try:
         result = services.reprocess_paper(settings, conn, paper_id)
-    except pipeline.IngestValidationError as exc:
+    except pipeline.IngestError as exc:
         raise HTTPException(
             status_code=400,
             detail={"code": exc.code, "message": exc.message},
+        ) from exc
+    except Exception as exc:
+        logger.exception("重新处理论文失败：%s", paper_id)
+        raise HTTPException(
+            status_code=500,
+            detail={"code": "REPROCESS_FAILED", "message": "重新处理失败，请稍后重试。"},
         ) from exc
     return _paper_out(conn, result.paper)
 
@@ -265,9 +334,12 @@ def get_chunk(
     conn: sqlite3.Connection = Depends(get_conn),
 ) -> dict:
     paper = _get_paper(conn, paper_id)
-    chunks = storage.get_chunks(conn, paper.id, paper.revision)
-    chunk = next((item for item in chunks if item.chunk_id == chunk_id), None)
-    if chunk is None:
+    chunk = storage.get_chunk(conn, chunk_id)
+    if (
+        chunk is None
+        or chunk.paper_id != paper.id
+        or chunk.revision != paper.revision
+    ):
         raise HTTPException(
             status_code=404,
             detail={"code": "CHUNK_NOT_FOUND", "message": "片段不存在"},
@@ -351,9 +423,13 @@ def get_summary(
             model_id=model_id,
         )
     except Exception as exc:
+        logger.exception("要点缓存读取失败：%s", paper_id)
         raise HTTPException(
             status_code=500,
-            detail={"code": "SUMMARY_BROKEN", "message": str(exc)},
+            detail={
+                "code": "SUMMARY_BROKEN",
+                "message": "要点缓存已过期或损坏，请重新生成。",
+            },
         ) from exc
     return _summary_out(summary)
 
@@ -386,9 +462,13 @@ def create_summary(
             detail={"code": exc.code, "message": exc.message},
         ) from exc
     except SummaryError as exc:
+        logger.warning("要点生成失败：%s", exc, exc_info=True)
         raise HTTPException(
             status_code=500,
-            detail={"code": exc.code, "message": exc.message},
+            detail={
+                "code": exc.code,
+                "message": "要点生成失败，请稍后重试或检查模型配置。",
+            },
         ) from exc
     finally:
         if graph is not None:
