@@ -13,7 +13,7 @@
 | ![文献问答](docs/images/ui-chat.jpg) | ![七类文献要点](docs/images/ui-points.jpg) |
 
 - 左侧为原生多页导航（文献问答 / 文献要点 / 我的文献）；
-- 右侧「源文献」抽屉默认收起，展开后可整篇 PDF 连续滚动、缩放、按页阅读；
+- 右侧「源文献」抽屉默认收起，展开后可逐页查看、缩放与下载 PDF；
 - 问答回答下方提供可展开的「引用与依据」，每个数字引用都能定位到片段与页码。
 
 ---
@@ -89,7 +89,7 @@ streamlit run app.py
 python -m unittest discover -s tests
 ```
 
-修复后新增离线边界测试（最终测试数量见 `docs/fixes_2026-11-06.md`）（配置、存储、解析、清洗、分块、检索、证据、Agent、要点、图谱、评测、API）。
+修复后新增离线边界测试（当前共 264 个离线测试，约 6 秒跑完）（配置、存储、解析、清洗、分块、检索、证据、Agent、要点、图谱、评测、API）。
 
 ### 5. 一条命令演示
 
@@ -102,7 +102,7 @@ python scripts/demo.py --with-graph
 
 ### 6. HTTP API（可选）
 
-后端可以独立运行，Streamlit 之外也能调用（当前 Streamlit 仍为直连模式，API 为并行能力）：
+后端可以独立运行，Streamlit 之外也能调用；Streamlit 可直连业务层或切换到 HTTP 模式：
 
 ```powershell
 uvicorn api.main:app --reload --port 8000
@@ -114,7 +114,7 @@ uvicorn api.main:app --reload --port 8000
 |---|---|---|
 | GET | `/health` | 健康检查（含图谱模式） |
 | GET | `/papers` | 文献列表 |
-| POST | `/papers` | 上传 PDF 入库 |
+| POST | `/papers` | 上传 PDF 入库；加 `?background=true` 异步入库（202，轮询 `/papers/{id}`） |
 | DELETE | `/papers/{id}` | 删除文献 |
 | GET | `/papers/{id}/pdf` | 下载原文 PDF |
 | GET / POST | `/papers/{id}/summary` | 读取 / 生成七类要点 |
@@ -128,6 +128,8 @@ PAPERPILOT_API_URL=http://127.0.0.1:8000
 ```
 
 此时 Streamlit 的文献列表、上传/删除/重新处理、PDF 下载与预览、问答、要点、图谱片段来源均通过 API 完成。
+上传走后台任务（`POST /papers?background=true`）：状态依次为 `parsing → ready/partial/failed`，
+客户端轮询 `/papers/{id}` 即可；失败记录会保留，重新上传同一文件可重试。
 
 **向量后端**（可选，默认 `numpy`）：
 
@@ -185,7 +187,7 @@ paperpilot/
 └── graph/                 # Neo4j 客户端、关系抽取、构建
 
 tests/                     # 单元测试与故障回归测试
-docs/                      # 设计、查询示例与界面截图
+docs/                      # 界面截图（设计文档仅保留在本地）
 scripts/                   # 演示脚本
 api/                       # FastAPI 接口层（独立运行）
 app.py                     # Streamlit 入口
@@ -227,6 +229,8 @@ app.py                     # Streamlit 入口
 - 向量路：bge-m3，1024 维，归一化后点积 = 余弦；
 - 关键词路：jieba 分词 + BM25（`k1=1.2, b=0.75`），IDF 按检索范围统计；
 - RRF 融合（`k=60`），按 `chunk_id` 去重，稳定排序；
+- 可选规则词面加权默认**关闭**（`RETRIEVAL_TERM_BOOST=0`）；开启时按数字/多字词命中追加小幅加分，
+  需要同步记录到评测设置，避免把“规则重排”的收益算进 RRF；
 - 索引按“论文 + 修订”隔离，旧修订不会泄漏。
 
 ### 知识图谱（可选）
@@ -258,6 +262,8 @@ app.py                     # Streamlit 入口
 - D 组有 9 道题实际调用了图谱工具，但标准证据命中与 C 持平（0.789），**未观察到图谱带来指标提升**；
 - 3 道无答案题在 C/D 中均正确拒答（1.000）；
 - 小样本单次运行，结论仅作参考，不宣称普遍有效或无效；
+- 注：表中结果来自 2026-11-07 版本，当时规则词面加权默认开启；当前默认纯 RRF
+  （`RETRIEVAL_TERM_BOOST=0`），指标需重跑后更新；
 - 评测代码、数据集与原始报告在 `evaluation/`，复现命令：
 
 ```powershell
@@ -286,6 +292,7 @@ python -m evaluation.run --dataset evaluation/datasets/eval_all.jsonl --config D
 ## 已知限制
 
 - 当前仅承诺本机单用户部署；UI 与 API 请按一种入口进行数据修改，同步网络请求不能保证立即物理中断。
+- 数据库结构版本只做“拒绝旧版本”，不会自动迁移；升级代码后旧数据目录需手动迁移或重建。
 - 图谱构建的跨存储原子切换、图谱写入中断后的恢复仍需后续完善。
 - 图谱对综述类论文抽取结果很稀疏（缺少方法—实验链条），这是数据特性，不是 bug；
 - 实体归一化较简单，可能出现同一概念多个 `Entity` 节点；

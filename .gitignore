@@ -28,7 +28,6 @@ _uv_*.log
 evaluation/results/
 jieba.cache
 tmp*/
-netsh winhttp show proxy
 # 编辑器
 .vscode/
 .idea/
