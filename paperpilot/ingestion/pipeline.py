@@ -74,32 +74,41 @@ def ingest_pdf(
     conn: sqlite3.Connection,
     *,
     max_bytes: int = MAX_PDF_BYTES,
+    paper_id: str | None = None,
 ) -> IngestResult:
-    """把一份 PDF 字节流入库；失败时抛 ``IngestError`` 或 parser 的错误。"""
+    """把一份 PDF 字节流入库；失败时抛 ``IngestError`` 或 parser 的错误。
+
+    ``paper_id`` 由后台入库入口预先分配时传入；此时跳过去重与 ID 分配，
+    事务/目录/状态仍走同一套流程。
+    """
     _validate_upload(data, max_bytes)
     display_name = _display_name(file_name)
     sha256 = hashlib.sha256(data).hexdigest()
 
-    existing = storage.find_paper_by_sha256(conn, sha256)
-    if existing is not None and existing.state is not PaperState.FAILED:
-        pages = storage.get_pages(conn, existing.id, existing.revision)
-        chunks = storage.get_chunks(conn, existing.id, existing.revision)
-        return IngestResult(
-            paper=existing,
-            paper_dir=settings.paper_dir(existing.id),
-            page_count=existing.page_count or len(pages),
-            chunk_count=len(chunks),
-            blank_page_numbers=tuple(
-                page.page_number for page in pages if page.is_blank
-            ),
-            duplicated=True,
-        )
-
-    if existing is not None:  # 失败的旧记录：复用 ID 重试
-        storage.delete_paper(conn, existing.id)
-        paper_id = existing.id
+    if paper_id is not None:
+        if not _PAPER_DIR_RE.fullmatch(paper_id):
+            raise IngestValidationError(f"非法论文编号：{paper_id!r}", "BAD_PAPER_ID")
     else:
-        paper_id = _next_paper_id(settings, conn)
+        existing = storage.find_paper_by_sha256(conn, sha256)
+        if existing is not None and existing.state is not PaperState.FAILED:
+            pages = storage.get_pages(conn, existing.id, existing.revision)
+            chunks = storage.get_chunks(conn, existing.id, existing.revision)
+            return IngestResult(
+                paper=existing,
+                paper_dir=settings.paper_dir(existing.id),
+                page_count=existing.page_count or len(pages),
+                chunk_count=len(chunks),
+                blank_page_numbers=tuple(
+                    page.page_number for page in pages if page.is_blank
+                ),
+                duplicated=True,
+            )
+
+        if existing is not None:  # 失败的旧记录：复用 ID 重试
+            storage.delete_paper(conn, existing.id)
+            paper_id = existing.id
+        else:
+            paper_id = _next_paper_id(settings, conn)
 
     working_dir = settings.tmp_dir / paper_id
     final_dir = settings.paper_dir(paper_id)
@@ -113,6 +122,12 @@ def ingest_pdf(
         parsed = parser.parse_pdf(working_dir / "source.pdf", paper_id=paper_id)
         pages = cleaning.strip_repeated_headers(parsed.pages)
         chunks = chunker.chunk_pages(pages)
+        if not chunks:
+            # 纯空白/纯扫描无文字 PDF：明确拒绝，避免留下无法建索引的 PARTIAL 记录。
+            raise IngestError(
+                "PDF 中没有可检索文字，未入库；请先做 OCR 或换一份可复制文字的 PDF",
+                code="NO_CHUNKS",
+            )
         _write_chunks_snapshot(working_dir / "chunks.jsonl", chunks)
 
         if final_dir.exists():

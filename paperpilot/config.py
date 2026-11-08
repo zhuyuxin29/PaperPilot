@@ -97,6 +97,27 @@ def _optional_int(env: Mapping[str, str], key: str) -> int | None:
     return value
 
 
+def _bounded_float(
+    env: Mapping[str, str],
+    key: str,
+    default: float,
+    minimum: float,
+    maximum: float,
+) -> float:
+    raw = _clean(env, key)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{key} 必须是数字，当前值：{raw!r}") from exc
+    if not minimum <= value <= maximum:
+        raise ValueError(
+            f"{key} 必须在 {minimum}~{maximum} 之间，当前值：{value}"
+        )
+    return value
+
+
 @dataclass
 class Settings:
     """一次运行使用的配置快照，构造后视为只读。"""
@@ -126,6 +147,9 @@ class Settings:
     max_steps: int = 8
     max_tool_calls: int = 12
     timeout_seconds: int = 240
+
+    # 可选的检索规则词面加权；默认 0（纯 RRF），避免评测归因被隐式重排影响。
+    retrieval_term_boost: float = 0.0
 
     # ---- 派生路径（全部集中在这里） ----
     @property
@@ -237,6 +261,7 @@ class Settings:
                 "max_tool_calls": self.max_tool_calls,
                 "timeout_seconds": self.timeout_seconds,
             },
+            "retrieval": {"term_boost": self.retrieval_term_boost},
         }
 
 
@@ -304,6 +329,9 @@ def load_settings(
         max_steps=_positive_int(env, "AGENT_MAX_STEPS", 8),
         max_tool_calls=_positive_int(env, "AGENT_MAX_TOOL_CALLS", 12),
         timeout_seconds=_positive_int(env, "AGENT_TIMEOUT_SECONDS", 240),
+        retrieval_term_boost=_bounded_float(
+            env, "RETRIEVAL_TERM_BOOST", 0.0, 0.0, 0.05
+        ),
     )
 
 

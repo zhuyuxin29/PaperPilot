@@ -47,6 +47,21 @@ class LoadSettingsTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             config.load_settings(env={"AGENT_MAX_TOOL_CALLS": "0"})
 
+    def test_retrieval_term_boost(self) -> None:
+        self.assertEqual(
+            config.load_settings(env={}).retrieval_term_boost, 0.0
+        )
+        self.assertEqual(
+            config.load_settings(
+                env={"RETRIEVAL_TERM_BOOST": "0.02"}
+            ).retrieval_term_boost,
+            0.02,
+        )
+        with self.assertRaises(ValueError):
+            config.load_settings(env={"RETRIEVAL_TERM_BOOST": "1.0"})
+        with self.assertRaises(ValueError):
+            config.load_settings(env={"RETRIEVAL_TERM_BOOST": "abc"})
+
     def test_embedding_dimension(self) -> None:
         settings = config.load_settings(env={"EMBEDDING_DIMENSION": "1024"})
         self.assertEqual(settings.embedding_dimension, 1024)

@@ -88,6 +88,15 @@ class SchemaTest(StorageTestBase):
         with self.assertRaises(storage.SchemaVersionError):
             storage.ensure_schema(self.conn)
 
+    def test_older_schema_is_rejected_instead_of_fake_upgrade(self) -> None:
+        with self.conn:
+            self.conn.execute(
+                "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
+                ("1",),
+            )
+        with self.assertRaises(storage.SchemaVersionError):
+            storage.ensure_schema(self.conn)
+
     def test_connect_to_directory_raises_storage_error(self) -> None:
         bad_path = Path(self._tmp.name) / "db_is_a_directory.sqlite3"
         bad_path.mkdir()
@@ -152,6 +161,22 @@ class DocumentTest(StorageTestBase):
 
 
 class QueriesTest(StorageTestBase):
+    def test_counts_and_chunk_ids_without_text(self) -> None:
+        storage.save_document(self.conn, make_paper(), make_pages(), make_chunks())
+
+        self.assertEqual(storage.get_paper_counts(self.conn, "paper_001"), (3, 2))
+        self.assertEqual(storage.list_paper_counts(self.conn), {"paper_001": (3, 2)})
+        self.assertEqual(
+            storage.get_chunk_ids(self.conn, "paper_001"),
+            [chunk.chunk_id for chunk in make_chunks()],
+        )
+
+        chunks = storage.get_chunks_by_ids(
+            self.conn, [chunk.chunk_id for chunk in make_chunks()]
+        )
+        self.assertEqual(set(chunks), {chunk.chunk_id for chunk in make_chunks()})
+        self.assertEqual(storage.get_chunks_by_ids(self.conn, []), {})
+
     def test_find_paper_by_sha256(self) -> None:
         storage.save_document(self.conn, make_paper())
         found = storage.find_paper_by_sha256(self.conn, SHA.upper())

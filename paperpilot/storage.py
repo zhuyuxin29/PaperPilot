@@ -147,10 +147,10 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
                 "请升级程序或恢复备份，不要直接写入"
             )
         if version < SCHEMA_VERSION:
-            # 仅做增量建表（全部为 CREATE IF NOT EXISTS），然后更新版本号
-            conn.execute(
-                "UPDATE schema_meta SET value = ? WHERE key = 'schema_version'",
-                (str(SCHEMA_VERSION),),
+            # 不做“只改版本号”的假升级：旧库必须显式迁移或重建，避免字段缺失。
+            raise SchemaVersionError(
+                f"数据库结构版本 {version} 低于代码支持的 {SCHEMA_VERSION}；"
+                "请先备份并迁移数据，或重建数据目录（PAPERPILOT_DATA_DIR）。"
             )
     conn.commit()
     return current_schema_version(conn)
@@ -264,6 +264,14 @@ def get_graph_state(
     return dict(row) if row is not None else None
 
 
+def list_graph_states(
+    conn: sqlite3.Connection,
+) -> dict[str, dict[str, object]]:
+    """一次查询返回所有论文的图谱状态，供列表接口避免 N+1。"""
+    rows = conn.execute("SELECT * FROM paper_graph_state").fetchall()
+    return {str(row["paper_id"]): dict(row) for row in rows}
+
+
 # ---------------------------------------------------------------- 读取
 
 
@@ -321,6 +329,73 @@ def get_chunks(
             (paper_id, revision, page_index),
         ).fetchall()
     return [_chunk_from_row(row) for row in rows]
+
+
+def get_chunk_ids(
+    conn: sqlite3.Connection, paper_id: str, revision: int = 1
+) -> list[str]:
+    """只取当前修订的片段 ID，用于检索范围过滤，不加载正文。"""
+    rows = conn.execute(
+        "SELECT chunk_id FROM chunks WHERE paper_id = ? AND revision = ? "
+        "ORDER BY ordinal",
+        (paper_id, revision),
+    ).fetchall()
+    return [str(row["chunk_id"]) for row in rows]
+
+
+def get_chunks_by_ids(
+    conn: sqlite3.Connection, chunk_ids: Sequence[str]
+) -> dict[str, Chunk]:
+    """按 chunk_id 批量取片段正文，用于检索融合后的候选回表。"""
+    unique = [chunk_id for chunk_id in dict.fromkeys(chunk_ids) if chunk_id]
+    if not unique:
+        return {}
+    result: dict[str, Chunk] = {}
+    # SQLite 单条语句的变量数量有限，按 400 个一批查询。
+    for start in range(0, len(unique), 400):
+        batch = unique[start : start + 400]
+        placeholders = ",".join("?" for _ in batch)
+        rows = conn.execute(
+            f"SELECT * FROM chunks WHERE chunk_id IN ({placeholders})", batch
+        ).fetchall()
+        for row in rows:
+            chunk = _chunk_from_row(row)
+            result[chunk.chunk_id] = chunk
+    return result
+
+
+def get_paper_counts(
+    conn: sqlite3.Connection, paper_id: str, revision: int = 1
+) -> tuple[int, int]:
+    """返回（页数, 片段数），只做 COUNT，不读取正文。"""
+    row = conn.execute(
+        "SELECT (SELECT COUNT(*) FROM pages WHERE paper_id = ? AND revision = ?) "
+        "AS page_count, "
+        "(SELECT COUNT(*) FROM chunks WHERE paper_id = ? AND revision = ?) "
+        "AS chunk_count",
+        (paper_id, revision, paper_id, revision),
+    ).fetchone()
+    return (int(row["page_count"]), int(row["chunk_count"])) if row else (0, 0)
+
+
+def list_paper_counts(
+    conn: sqlite3.Connection,
+) -> dict[str, tuple[int, int]]:
+    """一次查询返回所有论文当前修订的（页数, 片段数），供列表接口使用。"""
+    rows = conn.execute(
+        """
+        SELECT p.id AS id,
+               (SELECT COUNT(*) FROM pages pg
+                WHERE pg.paper_id = p.id AND pg.revision = p.revision) AS page_count,
+               (SELECT COUNT(*) FROM chunks ch
+                WHERE ch.paper_id = p.id AND ch.revision = p.revision) AS chunk_count
+        FROM papers p
+        """
+    ).fetchall()
+    return {
+        str(row["id"]): (int(row["page_count"]), int(row["chunk_count"]))
+        for row in rows
+    }
 
 
 def get_chunk(conn: sqlite3.Connection, chunk_id: str) -> Chunk | None:

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import re
 import sqlite3
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Sequence
 
@@ -30,6 +31,34 @@ DEFAULT_TOP_K = 8
 DEFAULT_PER_ROUTE = 20
 DEFAULT_RRF_K = 60
 DEFAULT_MIN_SIMILARITY = 0.0
+
+# 当前修订的 chunk_id 集合缓存；key 含 sha256，删除后重传同一文件可安全复用。
+_CURRENT_IDS_CACHE: "OrderedDict[tuple[str, str, int, str], frozenset[str]]" = (
+    OrderedDict()
+)
+_CURRENT_IDS_CACHE_SIZE = 64
+
+
+def _current_chunk_ids(
+    conn: sqlite3.Connection, settings: Settings, paper: Paper
+) -> frozenset[str]:
+    key = (
+        str(settings.data_dir),
+        paper.id,
+        paper.revision,
+        paper.sha256,
+    )
+    cached = _CURRENT_IDS_CACHE.get(key)
+    if cached is not None:
+        _CURRENT_IDS_CACHE.move_to_end(key)
+        return cached
+    ids = frozenset(
+        storage.get_chunk_ids(conn, paper.id, paper.revision)
+    )
+    _CURRENT_IDS_CACHE[key] = ids
+    while len(_CURRENT_IDS_CACHE) > _CURRENT_IDS_CACHE_SIZE:
+        _CURRENT_IDS_CACHE.popitem(last=False)
+    return ids
 
 
 class RetrievalError(RuntimeError):
@@ -90,14 +119,12 @@ def search_chunks(
     if not scope:
         raise RetrievalError("所选论文不存在或不可用", "NO_SCOPE")
 
-    chunks_by_paper: dict[str, list[Chunk]] = {}
-    chunk_map: dict[str, Chunk] = {}
-    for paper in scope:
-        chunks = storage.get_chunks(conn, paper.id, paper.revision)
-        chunks_by_paper[paper.id] = chunks
-        for chunk in chunks:
-            chunk_map[chunk.chunk_id] = chunk
-    if not chunk_map:
+    # 只取当前修订的 chunk_id 用于范围过滤，不再把全部正文读进内存。
+    current_ids: dict[str, set[str]] = {
+        paper.id: set(_current_chunk_ids(conn, settings, paper))
+        for paper in scope
+    }
+    if not any(current_ids.values()):
         return []
 
     routes: dict[str, list[str]] = {}
@@ -106,7 +133,7 @@ def search_chunks(
             settings,
             query,
             scope,
-            chunks_by_paper,
+            current_ids,
             provider,
             per_route,
             min_similarity,
@@ -116,12 +143,17 @@ def search_chunks(
             conn, settings, query, [paper.id for paper in scope], per_route
         )
 
-    return _fuse(
-        routes,
+    fused = _fusion_scores(routes, rrf_k=rrf_k)
+    if not fused:
+        return []
+    # 融合后只回表取候选正文（最多 per_route × 2 条），用于 snippet 与可选规则加权。
+    chunk_map = storage.get_chunks_by_ids(conn, tuple(fused))
+    return _build_candidates(
+        fused,
         chunk_map,
         top_k=top_k,
-        rrf_k=rrf_k,
         boost_terms=query_terms(query),
+        term_boost=getattr(settings, "retrieval_term_boost", 0.0),
     )
 
 
@@ -147,7 +179,7 @@ def _vector_route(
     settings: Settings,
     query: str,
     scope: list[Paper],
-    chunks_by_paper: dict[str, list[Chunk]],
+    current_ids: dict[str, set[str]],
     provider: EmbeddingProvider,
     per_route: int,
     min_similarity: float,
@@ -158,9 +190,7 @@ def _vector_route(
         try:
             ids: list[str] = []
             for paper in scope:
-                current_ids = {
-                    chunk.chunk_id for chunk in chunks_by_paper[paper.id]
-                }
+                current = current_ids[paper.id]
                 for chunk_id in chroma_backend.query_chroma(
                     settings,
                     provider,
@@ -169,7 +199,7 @@ def _vector_route(
                     paper.revision,
                     top_k=per_route,
                 ):
-                    if chunk_id in current_ids and chunk_id not in ids:
+                    if chunk_id in current and chunk_id not in ids:
                         ids.append(chunk_id)
             return ids[:per_route]
         except chroma_backend.ChromaBackendError as exc:
@@ -192,7 +222,7 @@ def _vector_route(
             raise RetrievalError(exc.message, "INDEX_STALE") from exc
         if data is None:
             raise RetrievalError("论文向量索引尚未就绪，请重新上传以重试建索引", "INDEX_MISSING")
-        current_ids = {chunk.chunk_id for chunk in chunks_by_paper[paper.id]}
+        current = current_ids[paper.id]
         if data.vectors.shape[1] != query_vector.shape[0]:
             raise RetrievalError(
                 f"索引维度与查询向量不一致：{data.vectors.shape[1]} ≠ "
@@ -201,7 +231,7 @@ def _vector_route(
             )
         similarities = data.vectors @ query_vector
         for chunk_id, similarity in zip(data.chunk_ids, similarities):
-            if chunk_id in current_ids and float(similarity) > min_similarity:
+            if chunk_id in current and float(similarity) > min_similarity:
                 scored.append((chunk_id, float(similarity)))
 
     scored.sort(key=lambda item: (-item[1], item[0]))
@@ -225,24 +255,37 @@ def _keyword_route(
         return []
 
 
-def _fuse(
+def _fusion_scores(
     routes: dict[str, list[str]],
-    chunk_map: dict[str, Chunk],
     *,
-    top_k: int,
     rrf_k: int,
-    boost_terms: tuple[str, ...] = (),
-) -> list[Candidate]:
+) -> dict[str, dict[str, object]]:
+    """按 RRF 累加各路名次分；返回 chunk_id -> {score, routes}。"""
     fused: dict[str, dict[str, object]] = {}
     for route, ranked_ids in routes.items():
         for position, chunk_id in enumerate(ranked_ids, start=1):
             entry = fused.setdefault(chunk_id, {"score": 0.0, "routes": []})
             entry["score"] = float(entry["score"]) + 1.0 / (rrf_k + position)
             entry["routes"].append(route)
+    return fused
 
-    # 轻量规则重排：数字/百分比与多字词命中加权
+
+def _build_candidates(
+    fused: dict[str, dict[str, object]],
+    chunk_map: dict[str, Chunk],
+    *,
+    top_k: int,
+    boost_terms: tuple[str, ...] = (),
+    term_boost: float = 0.0,
+) -> list[Candidate]:
+    """对已融合候选做可选规则重排并构造返回结构（正文已按需回表）。
+
+    ``term_boost`` 默认 0，即纯 RRF；只有显式配置 RETRIEVAL_TERM_BOOST
+    （0~0.05）时才按数字/多字词命中追加小幅加分，避免隐式改变评测排序。
+    """
     terms = [term for term in boost_terms if len(term) >= 2 or term.isdigit()]
-    if terms:
+    if term_boost > 0 and terms:
+        max_bonus = min(term_boost, 0.05)
         for chunk_id, entry in fused.items():
             chunk = chunk_map.get(chunk_id)
             if chunk is None:
@@ -250,7 +293,10 @@ def _fuse(
             text = chunk.text.lower()
             hits = sum(1 for term in terms if term in text)
             digit_hit = any(term.isdigit() and term in text for term in terms)
-            bonus = min(0.02, 0.004 * hits + (0.008 if digit_hit else 0.0))
+            bonus = min(
+                max_bonus,
+                max_bonus * 0.2 * hits + (max_bonus * 0.4 if digit_hit else 0.0),
+            )
             entry["score"] = float(entry["score"]) + bonus
 
     ordered = sorted(
