@@ -2,50 +2,18 @@
 
 from __future__ import annotations
 
-import copy
-import base64
-import html
-import io
-import json
 import os
-import shutil
 import sqlite3
-import threading
-import time
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from types import SimpleNamespace
 
 import streamlit as st
-import pypdfium2 as pdfium
 
-from paperpilot import storage, services
-from paperpilot.agent.runner import AgentResult, run_agent
-from paperpilot.client import ApiError, PaperPilotClient
+from .common import _api_client, _http_mode, _paper_status_line, paper_rows
+from paperpilot import services
+from paperpilot.client import ApiError
 from paperpilot.config import Settings, load_settings
-from paperpilot.conversation import rewrite_followup
-from paperpilot.evidence.registry import EvidenceRecord
-from paperpilot.graph.builder import build_paper_graph
-from paperpilot.graph.client import WORKSPACE_ID, GraphError, Neo4jClient
-from paperpilot.ingestion import pipeline
-from paperpilot.llm import create_chat_provider, create_embedding_provider
-from paperpilot.schemas import SUMMARY_KEYS, PaperState, Summary
-from paperpilot.summary.generator import (
-    SUMMARY_LABELS,
-    current_summary_model,
-    generate_summary,
-    load_summary,
-    summary_path,
-)
-from paperpilot.tools import build_registry
-from .common import *  # noqa: F401,F403
-from .common import (
-    _api_client, _http_mode, _paper_info, _paper_status_line, _pdf_bytes,
-    _render_pdf_button, _purge_paper, _chats_path, _load_chat_history,
-    _save_chat_history, _renumber_citations, _summary_to_markdown,
-)
-
+from paperpilot.graph.client import GraphError, Neo4jClient
+from paperpilot.llm import create_embedding_provider
+from paperpilot.summary.generator import current_summary_model
 
 def _render_current_paper(
     settings: Settings, conn: sqlite3.Connection

@@ -115,11 +115,25 @@ class AppSmokeTest(unittest.TestCase):
                     "import streamlit as st\n"
                     "from app import _page_points\n"
                     "st.session_state['current_paper'] = 'paper_001'\n"
+                    "st.session_state['show_source'] = True\n"
                     "_page_points()\n",
                     default_timeout=60,
                 )
                 points.run()
                 self.assertFalse(points.exception, msg=str(points.exception))
+
+                chat_source = AppTest.from_string(
+                    "import streamlit as st\n"
+                    "from app import _page_chat\n"
+                    "st.session_state['current_paper'] = 'paper_001'\n"
+                    "st.session_state['show_source'] = True\n"
+                    "_page_chat()\n",
+                    default_timeout=60,
+                )
+                chat_source.run()
+                self.assertFalse(
+                    chat_source.exception, msg=str(chat_source.exception)
+                )
 
                 library = AppTest.from_string(
                     "from app import _page_library\n_page_library()\n",

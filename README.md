@@ -186,7 +186,7 @@ paperpilot/
 ├── agent/                 # 预算、工具循环、引用修正
 ├── summary/               # 七类要点生成与校验
 ├── graph/                 # Neo4j 客户端、关系抽取、构建
-└── ui/                    # Streamlit 页面组件（common/sidebar/chat/points/library）
+└── ui/                    # Streamlit 组件（common/sidebar/chat/source/points/summary/library/paper_actions）
 
 tests/                     # 单元测试与故障回归测试
 docs/                      # 界面截图（设计文档仅保留在本地）

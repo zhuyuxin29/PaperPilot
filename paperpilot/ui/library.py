@@ -2,50 +2,11 @@
 
 from __future__ import annotations
 
-import copy
-import base64
-import html
-import io
-import json
-import os
-import shutil
-import sqlite3
-import threading
-import time
-import uuid
-from datetime import datetime, timezone
-from pathlib import Path
-from types import SimpleNamespace
-
 import streamlit as st
-import pypdfium2 as pdfium
 
-from paperpilot import storage, services
-from paperpilot.agent.runner import AgentResult, run_agent
-from paperpilot.client import ApiError, PaperPilotClient
-from paperpilot.config import Settings, load_settings
-from paperpilot.conversation import rewrite_followup
-from paperpilot.evidence.registry import EvidenceRecord
-from paperpilot.graph.builder import build_paper_graph
-from paperpilot.graph.client import WORKSPACE_ID, GraphError, Neo4jClient
-from paperpilot.ingestion import pipeline
-from paperpilot.llm import create_chat_provider, create_embedding_provider
-from paperpilot.schemas import SUMMARY_KEYS, PaperState, Summary
-from paperpilot.summary.generator import (
-    SUMMARY_LABELS,
-    current_summary_model,
-    generate_summary,
-    load_summary,
-    summary_path,
-)
-from paperpilot.tools import build_registry
-from .common import *  # noqa: F401,F403
-from .common import (
-    _api_client, _http_mode, _paper_info, _paper_status_line, _pdf_bytes,
-    _render_pdf_button, _purge_paper, _chats_path, _load_chat_history,
-    _save_chat_history, _renumber_citations, _summary_to_markdown,
-)
-
+from .common import _api_client, _http_mode, _render_pdf_button, _purge_paper, paper_rows
+from paperpilot.client import ApiError
+from .paper_actions import _reprocess_paper
 
 def _render_library_page(settings, conn, chat_page=None) -> None:
     st.subheader("我的文献")
@@ -99,21 +60,3 @@ def _render_library_page(settings, conn, chat_page=None) -> None:
                     st.success("已删除")
                     st.rerun()
 
-
-def _reprocess_paper(
-    settings: Settings, conn: sqlite3.Connection, paper_id: str
-) -> None:
-    data = _pdf_bytes(settings, paper_id)
-    if data is None:
-        st.error("找不到原始 PDF，无法重新处理。")
-        return
-    paper = storage.get_paper(conn, paper_id)
-    file_name = paper.file_name if paper else f"{paper_id}.pdf"
-    try:
-        result = services.reprocess_paper(settings, conn, paper_id)
-    except Exception as exc:
-        st.error(f"重新处理失败：{exc}")
-        return
-    st.session_state["current_paper"] = result.paper.id
-    st.success(f"重新处理完成：{result.paper.id} · {result.chunk_count} 个片段")
-    st.rerun()
