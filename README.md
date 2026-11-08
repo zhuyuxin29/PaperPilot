@@ -185,13 +185,14 @@ paperpilot/
 ├── tools/                 # search_chunks / read_passages / get_key_points / query_graph
 ├── agent/                 # 预算、工具循环、引用修正
 ├── summary/               # 七类要点生成与校验
-└── graph/                 # Neo4j 客户端、关系抽取、构建
+├── graph/                 # Neo4j 客户端、关系抽取、构建
+└── ui/                    # Streamlit 页面组件（common/sidebar/chat/points/library）
 
 tests/                     # 单元测试与故障回归测试
 docs/                      # 界面截图（设计文档仅保留在本地）
 scripts/                   # 演示脚本
 api/                       # FastAPI 接口层（独立运行）
-app.py                     # Streamlit 入口
+app.py                     # 应用入口：导航/侧边栏组装（页面实现在 paperpilot/ui）
 ```
 
 ---

@@ -268,11 +268,12 @@ class CapabilityBoundaries(unittest.TestCase):
             self.assertIsNone(_graph_client(settings))
 
     def test_duplicate_pending_does_not_start_new_thread(self):
-        import app
+        from paperpilot.ui import chat
+
         pending = {"question":"old"}
         fake_st = SimpleNamespace(session_state={"pending":pending}, warning=Mock())
-        with patch.object(app, "st", fake_st), patch.object(app.threading, "Thread") as thread:
-            app._start_pending(Settings(data_dir=Path("unused")), "paper_001", "new")
+        with patch.object(chat, "st", fake_st), patch.object(chat.threading, "Thread") as thread:
+            chat._start_pending(Settings(data_dir=Path("unused")), "paper_001", "new")
         thread.assert_not_called()
         self.assertIs(fake_st.session_state["pending"], pending)
 
