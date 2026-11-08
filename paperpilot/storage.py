@@ -163,6 +163,23 @@ def current_schema_version(conn: sqlite3.Connection) -> int:
     return int(row["value"]) if row is not None else 0
 
 
+def get_sequence(conn: sqlite3.Connection, name: str) -> int:
+    """读取持久化计数器（例如 paper_id 序号）；不存在返回 0。"""
+    row = conn.execute(
+        "SELECT value FROM schema_meta WHERE key = ?", (f"seq:{name}",)
+    ).fetchone()
+    return int(row["value"]) if row is not None else 0
+
+
+def set_sequence(conn: sqlite3.Connection, name: str, value: int) -> None:
+    with conn:
+        conn.execute(
+            "INSERT INTO schema_meta (key, value) VALUES (?, ?) "
+            "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            (f"seq:{name}", str(int(value))),
+        )
+
+
 # ---------------------------------------------------------------- 写入
 
 

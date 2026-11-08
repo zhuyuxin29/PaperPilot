@@ -196,21 +196,23 @@ def _fully_parsed(pages: tuple) -> bool:
 
 
 def _next_paper_id(settings: Settings, conn: sqlite3.Connection) -> str:
-    """按已有目录与数据库记录，生成下一个 paper_XXX。"""
-    used: set[int] = set()
+    """生成下一个 paper_XXX：ID 只增不复用。
+
+    序号持久化在 schema_meta（``seq:paper_id``），删除论文不会让编号回退，
+    避免旧任务日志/缓存/外部引用与新论文混在一起。
+    """
+    highest = storage.get_sequence(conn, "paper_id")
     if settings.data_dir.is_dir():
         for path in settings.data_dir.iterdir():
             match = _PAPER_DIR_RE.fullmatch(path.name)
             if match:
-                used.add(int(match.group(1)))
+                highest = max(highest, int(match.group(1)))
     for paper in storage.list_papers(conn):
         match = _PAPER_DIR_RE.fullmatch(paper.id)
         if match:
-            used.add(int(match.group(1)))
-
-    number = 1
-    while number in used:
-        number += 1
+            highest = max(highest, int(match.group(1)))
+    number = highest + 1
+    storage.set_sequence(conn, "paper_id", number)
     return f"paper_{number:03d}"
 
 

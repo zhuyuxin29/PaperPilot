@@ -40,6 +40,12 @@ def _purge_paper(
                 client.close()
 
     storage.delete_paper(conn, paper_id)
+    try:
+        from .agent import runs
+
+        runs.delete_for_paper(conn, paper_id)
+    except Exception:
+        pass
     shutil.rmtree(settings.paper_dir(paper_id), ignore_errors=True)
     for path in settings.index_dir.glob(f"{paper_id}*"):
         path.unlink(missing_ok=True)

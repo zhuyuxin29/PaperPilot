@@ -108,6 +108,17 @@ class IngestSuccessTest(PipelineTestBase):
         self.assertEqual(first.paper.id, "paper_001")
         self.assertEqual(second.paper.id, "paper_002")
 
+    def test_deleted_ids_are_not_reused(self) -> None:
+        from paperpilot import maintenance
+
+        first = self.ingest(CLEAN_PDF)
+        second = self.ingest(BLANK_PDF)
+        maintenance.purge_paper(self.settings, self.conn, first.paper.id)
+        maintenance.purge_paper(self.settings, self.conn, second.paper.id)
+
+        third = self.ingest(build_pdf(["Another paper content."]))
+        self.assertEqual(third.paper.id, "paper_003")
+
 
 class DedupTest(PipelineTestBase):
     def test_same_file_ingested_twice(self) -> None:

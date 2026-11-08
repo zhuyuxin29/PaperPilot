@@ -20,6 +20,7 @@ from paperpilot.summary.generator import (
     generate_summary,
     load_summary,
     summary_path,
+    _select_chunks,
 )
 from paperpilot.summary.validation import SummaryValidationError
 from paperpilot.tools import build_registry
@@ -68,6 +69,28 @@ def summary_json(
     if limitations_status == "not_found":
         sections["limitations"]["note"] = "论文未讨论局限性"
     return json.dumps({"sections": sections}, ensure_ascii=False)
+
+
+class SelectionTest(unittest.TestCase):
+    def test_stratified_selection_keeps_head_and_tail(self) -> None:
+        _, _, chunks = make_document(
+            texts=tuple(f"chunk-{index} " + "x" * 30 for index in range(60))
+        )
+        selected = _select_chunks(chunks, max_chars=120)
+
+        self.assertIn(chunks[0], selected)
+        self.assertIn(chunks[-1], selected)
+        self.assertLessEqual(
+            sum(len(chunk.text) for chunk in selected), 120
+        )
+        self.assertEqual(
+            [chunk.ordinal for chunk in selected],
+            sorted(chunk.ordinal for chunk in selected),
+        )
+
+    def test_small_document_keeps_all_chunks(self) -> None:
+        _, _, chunks = make_document()
+        self.assertEqual(_select_chunks(chunks, max_chars=100_000), chunks)
 
 
 class SummaryTestBase(unittest.TestCase):

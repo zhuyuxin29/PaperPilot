@@ -23,11 +23,42 @@ def _now():
 
 def start(conn, question, paper_ids):
     ensure(conn)
+    prune(conn)
     identifier = uuid.uuid4().hex
     with conn:
         conn.execute("INSERT INTO agent_runs(run_id,owner,question,paper_ids,status,started_at,updated_at) VALUES(?,?,?,?,?,?,?)",
                      (identifier, _PROCESS, question, json.dumps(list(paper_ids)), "RUNNING", _now(), _now()))
     return identifier
+
+
+def prune(conn, keep: int = 500):
+    """只保留最近 N 条任务日志，避免 agent_runs 无界增长。"""
+    ensure(conn)
+    if keep < 1:
+        raise ValueError("keep 必须大于等于 1")
+    with conn:
+        conn.execute(
+            "DELETE FROM agent_runs WHERE run_id IN ("
+            "SELECT run_id FROM agent_runs ORDER BY started_at DESC LIMIT -1 OFFSET ?)",
+            (keep,),
+        )
+
+
+def delete_for_paper(conn, paper_id: str) -> int:
+    """删除与指定论文关联的任务日志；返回删除条数。"""
+    ensure(conn)
+    rows = conn.execute("SELECT run_id, paper_ids FROM agent_runs").fetchall()
+    targets = [
+        row["run_id"] for row in rows
+        if paper_id in json.loads(row["paper_ids"])
+    ]
+    if targets:
+        with conn:
+            conn.executemany(
+                "DELETE FROM agent_runs WHERE run_id = ?",
+                [(run_id,) for run_id in targets],
+            )
+    return len(targets)
 
 
 def progress(conn, identifier, trace):

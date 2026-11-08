@@ -94,6 +94,18 @@ class AgentBoundaries(agent_cases.AgentTestBase):
         self.assertEqual(row["status"], "COMPLETED")
         self.assertEqual(json.loads(row["result_json"])["answer_kind"], "insufficient_evidence")
 
+    def test_runs_pruned_and_removed_with_paper(self):
+        from paperpilot.agent import runs
+
+        for _ in range(4):
+            runs.start(self.conn, "q", self.paper_ids)
+        runs.prune(self.conn, keep=2)
+        self.assertEqual(len(runs.recent(self.conn, limit=10)), 2)
+
+        removed = runs.delete_for_paper(self.conn, self.paper_ids[0])
+        self.assertGreaterEqual(removed, 2)
+        self.assertEqual(runs.recent(self.conn, limit=10), [])
+
     def test_finished_run_restores_chat_after_session_loss(self):
         from paperpilot.history import load_history
         result, _ = self.run_agent([raw_response('{"status":"insufficient_evidence","claims":[]}')])

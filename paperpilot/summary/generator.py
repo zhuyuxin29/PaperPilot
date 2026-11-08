@@ -183,13 +183,7 @@ def generate_summary(
     if not chunks:
         raise SummaryError(f"文献没有可用的片段：{paper_id}", "NO_CHUNKS")
 
-    selected = []
-    used_chars = 0
-    for chunk in chunks:
-        if selected and used_chars + len(chunk.text) > max_chars:
-            break
-        selected.append(chunk)
-        used_chars += len(chunk.text)
+    selected = _select_chunks(chunks, max_chars)
 
     registry = EvidenceRegistry()
     passages = []
@@ -337,6 +331,43 @@ def _parse_json(content: str) -> dict:
     if not isinstance(data, dict):
         raise ValueError("JSON 顶层必须是对象")
     return data
+
+
+def _select_chunks(chunks, max_chars: int):
+    """在字符预算内做分层抽样，保留开头、结尾和中间章节，避免只读前半篇。
+
+    - 全文字符数未超预算：全部使用；
+    - 超出预算：在全文均匀取最多 32 个位置，再按预算筛入（首尾优先保留）。
+    """
+    if not chunks or max_chars < 1:
+        return []
+    total = sum(len(chunk.text) for chunk in chunks)
+    if total <= max_chars:
+        return list(chunks)
+
+    count = min(len(chunks), 32)
+    if count <= 1:
+        indices = [0]
+    else:
+        indices = sorted(
+            {round(index * (len(chunks) - 1) / (count - 1)) for index in range(count)}
+        )
+    # 首尾优先：先保留开头和结尾，再用剩余预算填充中间采样点。
+    chosen: set[int] = set()
+    used_chars = 0
+    for index in ([0] if len(chunks) == 1 else [0, len(chunks) - 1]):
+        size = len(chunks[index].text)
+        if not chosen or used_chars + size <= max_chars:
+            chosen.add(index)
+            used_chars += size
+    for index in indices:
+        if index in chosen:
+            continue
+        size = len(chunks[index].text)
+        if used_chars + size <= max_chars:
+            chosen.add(index)
+            used_chars += size
+    return [chunks[index] for index in sorted(chosen)]
 
 
 def _build_coverage(pages, chunks, selected, processed) -> SummaryCoverage:
