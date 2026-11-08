@@ -47,14 +47,15 @@ PaperPilot 的核心约束是：
 
 ### 1. 环境
 
-- Windows / macOS / Linux，Python **3.11**
+- Windows / macOS / Linux，Python **3.11+**（开发与测试使用 3.11）
 - 可选：Neo4j Desktop（仅图谱功能需要）
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 python -m pip install -U pip
-pip install -e ".[dev]"
+pip install -e ".[dev]"          # 基础功能
+pip install -e ".[dev,graph]"    # 需要 Neo4j 图谱时
 ```
 
 ### 2. 配置
@@ -264,7 +265,8 @@ app.py                     # Streamlit 入口
 - 小样本单次运行，结论仅作参考，不宣称普遍有效或无效；
 - 注：表中结果来自 2026-11-07 版本，当时规则词面加权默认开启；当前默认纯 RRF
   （`RETRIEVAL_TERM_BOOST=0`），指标需重跑后更新；
-- 评测代码、数据集与原始报告在 `evaluation/`，复现命令：
+- 评测代码、数据集与原始报告在 `evaluation/`；22 题 A/B/C/D 汇总已归档到
+  `evaluation/reports/`（逐题 JSON 与 review.csv 保留在本机 `evaluation/results/`），复现命令：
 
 ```powershell
 python -m evaluation.run --dataset evaluation/datasets/eval_all.jsonl --config A --top-k 5

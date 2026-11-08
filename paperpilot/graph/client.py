@@ -8,8 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from neo4j import GraphDatabase, Query
-
 from ..config import Settings
 
 WORKSPACE_ID = "local"
@@ -114,6 +112,13 @@ class Neo4jClient:
             )
         try:
             try:
+                from neo4j import GraphDatabase
+            except ImportError as exc:
+                raise GraphError(
+                    "未安装 neo4j 驱动；图谱功能需要 pip install -e \".[graph]\"",
+                    "GRAPH_NOT_INSTALLED",
+                ) from exc
+            try:
                 driver = GraphDatabase.driver(
                     settings.neo4j_uri,
                     auth=(settings.neo4j_username, settings.neo4j_password),
@@ -125,6 +130,8 @@ class Neo4jClient:
                     auth=(settings.neo4j_username, settings.neo4j_password),
                 )
             driver.verify_connectivity()
+        except GraphError:
+            raise
         except Exception as exc:  # 驱动异常类型随版本变化，统一包装
             raise GraphError(
                 f"无法连接 Neo4j：{exc}", "GRAPH_UNAVAILABLE"
@@ -230,6 +237,13 @@ class Neo4jClient:
             if not terms:
                 return []
         with self._session() as session:
+            try:
+                from neo4j import Query
+            except ImportError as exc:
+                raise GraphError(
+                    "未安装 neo4j 驱动；图谱功能需要 pip install -e \".[graph]\"",
+                    "GRAPH_NOT_INSTALLED",
+                ) from exc
             result = session.run(
                 Query(template, timeout=2.0),
                 workspace_id=workspace_id,

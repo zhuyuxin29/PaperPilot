@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "paperpilot"
 version = "0.1.0"
 description = "带证据的文献阅读 Agent：七类要点、文献内问答、图谱关系召回"
-requires-python = ">=3.11,<3.12"
+requires-python = ">=3.11"
 dependencies = [
     "pydantic>=2.6,<3",
     "pypdf>=6,<7",
@@ -14,7 +14,6 @@ dependencies = [
     "numpy>=1.26",
     "requests>=2.31",
     "jieba>=0.42,<1",
-    "neo4j>=5.20,<7",
     "pypdfium2>=4,<6",
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<1",
@@ -23,6 +22,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["httpx>=0.27"]
+graph = ["neo4j>=5.20,<7"]
 chroma = ["chromadb>=0.5.23,<0.6", "posthog<6"]
 
 [tool.setuptools.packages.find]
