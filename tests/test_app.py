@@ -53,6 +53,64 @@ class HelperTest(unittest.TestCase):
         self.assertEqual(rows[1]["页数"], 2)
         self.assertGreater(rows[1]["片段数"], 0)
 
+    def test_finalize_pending_uses_thread_local_connection(self) -> None:
+        import threading
+        from types import SimpleNamespace
+        from unittest.mock import Mock, patch
+
+        from paperpilot.agent.runner import AgentResult
+        from paperpilot.schemas import Paper
+        from paperpilot.ui import chat
+
+        storage.save_paper(
+            self.conn,
+            Paper(
+                id="paper_001",
+                title="demo",
+                file_name="demo.pdf",
+                sha256="a" * 64,
+            ),
+        )
+        result = AgentResult(
+            answer="答案",
+            citations=(),
+            status="COMPLETED",
+            stop_reason="DONE",
+            trace=(),
+            steps=1,
+            tool_calls=0,
+            run_id="run_001",
+        )
+        fake_st = SimpleNamespace(
+            session_state={
+                "pending": {
+                    "paper_id": "paper_001",
+                    "question": "问题",
+                    "holder": {"result": result},
+                },
+                "chats": {},
+            }
+        )
+        errors: list[BaseException] = []
+
+        def worker() -> None:
+            try:
+                chat._finalize_pending(self.settings)
+            except BaseException as exc:  # noqa: BLE001 - 测试中收集后统一断言
+                errors.append(exc)
+
+        with patch.object(chat, "st", fake_st), patch.object(
+            chat, "_save_chat_history", Mock()
+        ):
+            thread = threading.Thread(target=worker)
+            thread.start()
+            thread.join(5)
+
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(errors, [])
+        entry = fake_st.session_state["chats"]["paper_001"][0]
+        self.assertEqual(entry["revision"], 1)
+
 
 class AppSmokeTest(unittest.TestCase):
     def test_app_runs_without_exception(self) -> None:

@@ -72,7 +72,7 @@ def _render_chat_page(
                 st.rerun()
         pending = st.session_state.get("pending")
         if pending and pending.get("paper_id") == paper_id:
-            _pending_poller(settings, conn, paper_id)
+            _pending_poller(settings, paper_id)
 
         question = st.chat_input(
             "输入你对这篇论文的问题……", key=f"chat_input_{paper_id}",
@@ -116,11 +116,12 @@ def _start_pending(settings: Settings, paper_id: str, question: str) -> None:
     thread.start()
 
 
-def _poll_pending(settings: Settings, conn: sqlite3.Connection) -> None:
+def _poll_pending(settings: Settings, conn: sqlite3.Connection | None = None) -> None:
+    """轮询并收尾后台任务；连接参数保留兼容，收尾时自行创建线程内连接。"""
     pending = st.session_state.get("pending")
     if not pending or pending["thread"].is_alive():
         return
-    _finalize_pending(settings, conn)
+    _finalize_pending(settings)
 
 
 def _render_pending_status(settings: Settings, pending: dict, paper_id: str) -> None:
@@ -138,7 +139,7 @@ def _render_pending_status(settings: Settings, pending: dict, paper_id: str) -> 
 
 
 @st.fragment(run_every=0.8)
-def _pending_poller(settings: Settings, conn: sqlite3.Connection, paper_id: str) -> None:
+def _pending_poller(settings: Settings, paper_id: str) -> None:
     """局部轮询后台问答任务，避免整页 rerun。"""
     pending = st.session_state.get("pending")
     if not pending or pending.get("paper_id") != paper_id:
@@ -146,13 +147,11 @@ def _pending_poller(settings: Settings, conn: sqlite3.Connection, paper_id: str)
     if pending["thread"].is_alive():
         _render_pending_status(settings, pending, paper_id)
         return
-    _poll_pending(settings, conn)
+    _poll_pending(settings)
     st.rerun()
 
 
-def _finalize_pending(
-    settings: Settings, conn: sqlite3.Connection
-) -> None:
+def _finalize_pending(settings: Settings) -> None:
     pending = st.session_state.pop("pending", None)
     if not pending:
         return
@@ -195,13 +194,20 @@ def _finalize_pending(
         claims = entry.get("graph_claims")
         if claims:
             graph_claims.extend(claims)
+    # fragment 可能运行在与页面不同的线程：SQLite 连接必须在当前线程创建。
+    conn = storage.connect(settings.db_path)
+    try:
+        paper = storage.get_paper(conn, paper_id)
+        revision = paper.revision if paper else None
+    finally:
+        conn.close()
     history.append(
         {
             "id": uuid.uuid4().hex[:8],
             "question": question,
             "answer": result.answer,
             "run_id": result.run_id,
-            "revision": storage.get_paper(conn, paper_id).revision if storage.get_paper(conn, paper_id) else None,
+            "revision": revision,
             "status": result.status,
             "stop_reason": result.stop_reason,
             "citations": citations,
