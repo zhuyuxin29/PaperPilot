@@ -1,10 +1,3 @@
-"""标注辅助（模块 12）：按关键词列出片段，便于填写 gold_chunk_ids。
-
-示例：
-
-    python -m evaluation.annotate --paper-id paper_001 --grep 评估 --limit 10
-"""
-
 from __future__ import annotations
 
 import argparse

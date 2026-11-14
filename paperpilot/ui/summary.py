@@ -1,5 +1,3 @@
-"""七类要点的读取、生成与章节渲染辅助。"""
-
 from __future__ import annotations
 
 import html

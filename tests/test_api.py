@@ -1,5 +1,3 @@
-"""模块 14（API）验收测试：健康检查、文献、要点、问答与错误处理。"""
-
 from __future__ import annotations
 
 import json

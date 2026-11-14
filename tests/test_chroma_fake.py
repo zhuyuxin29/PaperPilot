@@ -1,5 +1,3 @@
-"""Chroma 后端离线测试：用假 chromadb，不建真实数据库。"""
-
 from __future__ import annotations
 
 import sys

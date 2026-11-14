@@ -1,19 +1,3 @@
-"""七类要点生成（模块 10）。
-
-流程：
-1. 按论文修订取出全部片段，在字符预算内回读原文并登记证据；
-2. 若提供图谱客户端，额外读取已校验的关系作为辅助线索（不替代原文证据）；
-3. 把“带 evidence_id 的原文材料 + 图谱关系线索”交给对话模型，要求输出固定 JSON；
-4. 程序侧校验七键、状态/条目规则、引用有效性；
-5. 结果按“论文 + 修订 + schema/prompt/模型版本 + 图谱指纹”缓存为 JSON 文件。
-
-原则：
-- 没写就标 ``not_found``（仅覆盖完整时允许），不确定就标 ``insufficient_evidence``；
-- 不为了填满七类而编造内容；
-- 引用只能来自本次生成前回读的 evidence；
-- 图谱关系只用于帮助组织要点，引用仍必须来自原文片段。
-"""
-
 from __future__ import annotations
 
 import json
@@ -85,8 +69,6 @@ SYSTEM_PROMPT = """你是学术文献阅读助手，任务是把一篇论文整�
 
 
 class SummaryError(RuntimeError):
-    """要点生成/读取失败；``code`` 供上层映射。"""
-
     def __init__(self, message: str, code: str = "SUMMARY_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -101,7 +83,6 @@ class GenerationResult:
 
 
 def current_summary_model(settings: Settings) -> str:
-    """当前配置下用于要点生成的模型标识（与缓存键一致）。"""
     provider = (settings.chat_provider or "").strip().lower()
     if provider in ("", "deepseek"):
         return settings.chat_model or "deepseek-chat"
@@ -126,7 +107,6 @@ def load_summary(
     model_id: str,
     graph_digest: str | None = None,
 ) -> Summary:
-    """读取缓存并检查版本；过期时抛 ``SummaryError``。"""
     data = json.loads(path.read_text(encoding="utf-8"))
     summary = Summary.model_validate(data)
     if (
@@ -152,7 +132,6 @@ def generate_summary(
     max_chars: int = DEFAULT_MAX_CHARS,
     graph: object | None = None,
 ) -> GenerationResult:
-    """生成（或复用缓存）七类要点；``graph`` 提供时用图谱关系做辅助线索。"""
     paper = storage.get_paper(conn, paper_id)
     if paper is None:
         raise SummaryError(f"文献不存在：{paper_id}", "PAPER_NOT_FOUND")
@@ -176,7 +155,7 @@ def generate_summary(
                 True,
             )
         except (SummaryError, ValidationError, ValueError):
-            pass  # 缓存损坏或过期，重新生成
+            pass
 
     pages = storage.get_pages(conn, paper_id, revision)
     chunks = storage.get_chunks(conn, paper_id, revision)
@@ -250,9 +229,6 @@ def generate_summary(
     return GenerationResult(summary, path, False)
 
 
-# ---------------------------------------------------------------- 内部
-
-
 GRAPH_QUERY_TYPES = (
     "method_experiments",
     "experiment_results",
@@ -261,7 +237,6 @@ GRAPH_QUERY_TYPES = (
 
 
 def _graph_materials(graph: object | None, paper_id: str) -> tuple[str, str]:
-    """读取图谱已校验关系，返回（文本, 指纹）；不可用/为空时返回空。"""
     if graph is None:
         return "", ""
     try:
@@ -288,7 +263,6 @@ def _graph_materials(graph: object | None, paper_id: str) -> tuple[str, str]:
         digest = hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
         return text, digest
     except Exception:
-        # 图谱故障不应阻断要点生成：降级为纯原文模式
         return "", ""
 
 
@@ -334,11 +308,6 @@ def _parse_json(content: str) -> dict:
 
 
 def _select_chunks(chunks, max_chars: int):
-    """在字符预算内做分层抽样，保留开头、结尾和中间章节，避免只读前半篇。
-
-    - 全文字符数未超预算：全部使用；
-    - 超出预算：在全文均匀取最多 32 个位置，再按预算筛入（首尾优先保留）。
-    """
     if not chunks or max_chars < 1:
         return []
     total = sum(len(chunk.text) for chunk in chunks)
@@ -352,7 +321,7 @@ def _select_chunks(chunks, max_chars: int):
         indices = sorted(
             {round(index * (len(chunks) - 1) / (count - 1)) for index in range(count)}
         )
-    # 首尾优先：先保留开头和结尾，再用剩余预算填充中间采样点。
+
     chosen: set[int] = set()
     used_chars = 0
     for index in ([0] if len(chunks) == 1 else [0, len(chunks) - 1]):

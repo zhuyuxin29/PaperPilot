@@ -1,4 +1,3 @@
-"""Regression cases for the 2026-11-06 review; no paid APIs or live Neo4j."""
 import json
 import sqlite3
 import tempfile

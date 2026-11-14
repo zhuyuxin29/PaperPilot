@@ -1,16 +1,3 @@
-"""PaperPilot 配置与路径管理。
-
-职责：
-- 读取 .env 与进程环境变量；
-- 集中解析数据目录与子目录，业务代码不得硬编码绝对路径；
-- 校验 GRAPH_MODE 与预算参数；
-- 输出脱敏配置摘要与能力检查结果。
-
-边界：
-- 本模块不连接任何外部服务；Neo4j 连通性由图谱模块在 auto/on 下另测。
-- 密码与 API Key 只判断“是否配置”，不写日志、不打印。
-"""
-
 from __future__ import annotations
 
 import json
@@ -28,7 +15,6 @@ _PAPER_DIR_RE = re.compile(r"^paper_\d{3,}$")
 
 
 def load_dotenv(path: Path | str | None = None) -> None:
-    """读取 .env 文件（KEY=VALUE），不覆盖已存在的环境变量。"""
     env_path = Path(path) if path is not None else Path.cwd() / ".env"
     if not env_path.is_file():
         return
@@ -51,11 +37,6 @@ def _clean(env: Mapping[str, str], key: str, default: str = "") -> str:
 
 
 def _provider_key(env: Mapping[str, str], provider: str) -> str:
-    """按 provider 名称回退读取 ``<PROVIDER>_API_KEY``。
-
-    例如 ``EMBEDDING_PROVIDER=siliconflow`` 时会读取 ``SILICONFLOW_API_KEY``，
-    便于复用已有的服务商 Key，而不是强制复制一份到 EMBEDDING_API_KEY。
-    """
     if not provider:
         return ""
     return _clean(env, f"{provider.upper().replace('-', '_')}_API_KEY")
@@ -120,8 +101,6 @@ def _bounded_float(
 
 @dataclass
 class Settings:
-    """一次运行使用的配置快照，构造后视为只读。"""
-
     data_dir: Path
     graph_mode: str = "off"
     api_mode: str = "direct"
@@ -148,10 +127,10 @@ class Settings:
     max_tool_calls: int = 12
     timeout_seconds: int = 240
 
-    # 可选的检索规则词面加权；默认 0（纯 RRF），避免评测归因被隐式重排影响。
+
     retrieval_term_boost: float = 0.0
 
-    # ---- 派生路径（全部集中在这里） ----
+
     @property
     def db_path(self) -> Path:
         return self.data_dir / "app.sqlite3"
@@ -161,7 +140,6 @@ class Settings:
         return self.data_dir / ".tmp"
 
     def paper_dir(self, paper_id: str) -> Path:
-        """单篇论文的数据目录：``{data_dir}/paper_001``（源文件 + 片段快照）。"""
         if not _PAPER_DIR_RE.fullmatch(paper_id):
             raise ValueError(
                 f"非法 paper_id：{paper_id!r}（应形如 paper_001）"
@@ -188,7 +166,7 @@ class Settings:
     def exports_dir(self) -> Path:
         return self.data_dir / "exports"
 
-    # ---- 能力检查（只判断配置，不判断连通性） ----
+
     @property
     def chat_configured(self) -> bool:
         return bool(self.chat_model and self.chat_api_key)
@@ -205,7 +183,6 @@ class Settings:
         }
 
     def ensure_dirs(self) -> None:
-        """创建数据目录与子目录；可重复调用。"""
         for path in (
             self.data_dir,
             self.tmp_dir,
@@ -218,10 +195,6 @@ class Settings:
             path.mkdir(parents=True, exist_ok=True)
 
     def assert_writable(self) -> None:
-        """验证数据目录确实可写（写一个探针文件再删除）。
-
-        仅当目录存在但没有写权限时才会失败；失败时给出可操作的提示。
-        """
         try:
             self.ensure_dirs()
             probe = self.data_dir / ".write_probe"
@@ -234,7 +207,6 @@ class Settings:
             ) from exc
 
     def summary(self) -> dict[str, object]:
-        """脱敏配置摘要：可用于日志与诊断，不含密钥。"""
         return {
             "data_dir": str(self.data_dir),
             "db_path": str(self.db_path),
@@ -269,11 +241,6 @@ def load_settings(
     env: Mapping[str, str] | None = None,
     dotenv_path: Path | str | None = None,
 ) -> Settings:
-    """从环境变量（或显式传入的映射）构造 Settings。
-
-    env 为 None 时先加载 .env，再读取进程环境变量；传入映射时完全按映射解析，
-    便于测试，不读取磁盘上的 .env。
-    """
     if env is None:
         load_dotenv(dotenv_path)
         env = os.environ
@@ -336,7 +303,6 @@ def load_settings(
 
 
 def main() -> None:
-    """python -m paperpilot.config：创建数据目录并打印脱敏配置摘要。"""
     if hasattr(sys.stdout, "reconfigure"):
         try:
             sys.stdout.reconfigure(encoding="utf-8")

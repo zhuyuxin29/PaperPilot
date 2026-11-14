@@ -1,5 +1,3 @@
-"""模块 10（summary schema）验收测试：七键、状态规则、覆盖度约束。"""
-
 from __future__ import annotations
 
 import unittest

@@ -1,5 +1,3 @@
-"""评测执行器（模块 12）：A/B 检索对比与 C/D Agent 对比。"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -46,7 +44,6 @@ def run_retrieval_eval(
     graph_client=None,
     top_k: int = 8,
 ) -> dict:
-    """配置 A（纯混合检索）/ B（图谱候选 + 文本检索 RRF 融合）。"""
     rows: list[dict] = []
     for question in questions:
         entry = {
@@ -138,14 +135,13 @@ def run_agent_eval(
     graph_client=None,
     budget: Budget | None = None,
 ) -> dict:
-    """配置 C（Agent，无图谱工具）/ D（Agent + 图谱工具）。"""
     if use_graph and graph_client is None:
         raise ValueError("配置 D 必须提供可用的图谱连接")
     settings = replace(settings, graph_mode="on" if use_graph else "off")
     from paperpilot.tools.registry import ToolRegistry
     base = build_registry(graph_enabled=use_graph)
     tools = ToolRegistry()
-    # Both arms use identical raw-evidence tools; cached summaries are excluded.
+
     for name in base.names():
         if name != "get_key_points":
             tools.register(base.get(name))
@@ -264,11 +260,7 @@ def run_agent_eval(
     }
 
 
-# ---------------------------------------------------------------- 内部
-
-
 def _graph_chunk_ids(graph_client, paper_ids: list[str], question: str) -> list[str]:
-    """取图谱三模板覆盖的全部 chunk_id（去重、保序）。"""
     seen: list[str] = []
     for query_type in GRAPH_QUERY_TYPES:
         rows = graph_client.query_template(

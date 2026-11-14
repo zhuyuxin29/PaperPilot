@@ -1,5 +1,3 @@
-"""模块 11（graph）验收测试：抽取、构建、工具（使用 Fake，不连真实 Neo4j）。"""
-
 from __future__ import annotations
 
 import json
@@ -194,7 +192,6 @@ class BuilderTest(GraphTestBase):
         self.assertEqual(first, second)
 
     def test_rebuild_reuses_extraction_cache(self) -> None:
-        # 第一次构建写入抽取缓存；第二次用没有内容的 FakeChat 重建也不再调模型。
         build_paper_graph(
             self.conn,
             self.settings,

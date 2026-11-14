@@ -1,5 +1,3 @@
-"""文献问答页、源文献面板与后台任务轮询。"""
-
 from __future__ import annotations
 
 import copy
@@ -101,7 +99,7 @@ def _start_pending(settings: Settings, paper_id: str, question: str) -> None:
             holder["result"] = _run_question(
                 settings_snapshot, paper_id, question, cancel, history
             )
-        except Exception as exc:  # 网络/配置错误通过界面反馈
+        except Exception as exc:
             holder["error"] = exc
 
     thread = threading.Thread(target=worker, daemon=True)
@@ -117,7 +115,6 @@ def _start_pending(settings: Settings, paper_id: str, question: str) -> None:
 
 
 def _poll_pending(settings: Settings, conn: sqlite3.Connection | None = None) -> None:
-    """轮询并收尾后台任务；连接参数保留兼容，收尾时自行创建线程内连接。"""
     pending = st.session_state.get("pending")
     if not pending or pending["thread"].is_alive():
         return
@@ -140,7 +137,6 @@ def _render_pending_status(settings: Settings, pending: dict, paper_id: str) -> 
 
 @st.fragment(run_every=0.8)
 def _pending_poller(settings: Settings, paper_id: str) -> None:
-    """局部轮询后台问答任务，避免整页 rerun。"""
     pending = st.session_state.get("pending")
     if not pending or pending.get("paper_id") != paper_id:
         return
@@ -194,7 +190,7 @@ def _finalize_pending(settings: Settings) -> None:
         claims = entry.get("graph_claims")
         if claims:
             graph_claims.extend(claims)
-    # fragment 可能运行在与页面不同的线程：SQLite 连接必须在当前线程创建。
+
     conn = storage.connect(settings.db_path)
     try:
         paper = storage.get_paper(conn, paper_id)
@@ -375,7 +371,6 @@ def _render_citations(
         )
 
 
-
 def _render_trace(trace: list[dict]) -> None:
     if not trace:
         return
@@ -410,7 +405,3 @@ def _render_trace(trace: list[dict]) -> None:
                     f"⚠ {TOOL_LABELS.get(entry.get('tool', ''), entry.get('tool', ''))}："
                     f"{error.get('message', '')}"
                 )
-
-
-# ---------------------------------------------------------------- 文献要点
-

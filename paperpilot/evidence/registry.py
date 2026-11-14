@@ -1,11 +1,3 @@
-"""证据登记（模块 8）：run 级证据集合。
-
-约定：
-- ``evidence_id`` 只在**本次运行**内有效，不能跨 run 复用；
-- 同一片段在一次运行内重复回读，复用同一个 evidence_id；
-- 证据只由 ``read_passages`` 产生，检索候选不是证据。
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -24,8 +16,6 @@ class EvidenceRecord:
 
 
 class EvidenceRegistry:
-    """一次运行内的证据集合；按登记顺序生成 ``ev_001`` 形式 ID。"""
-
     def __init__(self) -> None:
         self._records: dict[str, EvidenceRecord] = {}
         self._by_chunk: dict[str, str] = {}

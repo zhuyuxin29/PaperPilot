@@ -1,12 +1,3 @@
-"""原文回读与证据登记（模块 8）。
-
-``read_passages`` 是**唯一**能产生 ``evidence_id`` 的入口：
-
-1. 按 chunk_id 取回真实片段（校验存在、修订、论文范围）；
-2. 登记到本次运行的证据集合；
-3. 可选返回同页相邻片段作为阅读上下文（相邻片段不自动登记为证据）。
-"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -38,7 +29,6 @@ def read_passages(
     neighbor: int = 0,
     max_batch: int = DEFAULT_MAX_BATCH,
 ) -> list[Passage]:
-    """回读片段并登记证据；一次最多 ``max_batch`` 个片段。"""
     unique_ids: list[str] = []
     seen: set[str] = set()
     for chunk_id in chunk_ids:
@@ -94,7 +84,6 @@ def read_passages(
 def _neighbors(
     conn: sqlite3.Connection, chunk: Chunk, span: int
 ) -> tuple[Chunk, ...]:
-    """同页相邻片段；只作为阅读上下文返回，不登记为证据。"""
     same_page = storage.get_chunks(
         conn, chunk.paper_id, chunk.revision, page_index=chunk.page_index
     )

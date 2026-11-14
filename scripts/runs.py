@@ -1,4 +1,3 @@
-"""Inspect persisted runs and mark only proven-dead owners interrupted."""
 import argparse
 import json
 import sys

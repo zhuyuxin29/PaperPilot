@@ -1,5 +1,3 @@
-"""文献要点页：七类要点卡片、导出与生成。"""
-
 from __future__ import annotations
 
 import html
@@ -124,5 +122,3 @@ def _render_points_page(
     if source_col is not None:
         with source_col:
             _render_source_panel(settings, conn, paper_id)
-
-

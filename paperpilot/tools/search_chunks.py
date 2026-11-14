@@ -1,8 +1,3 @@
-"""search_chunks 工具：在当前论文范围内检索候选片段。
-
-输出只是**候选**，不是证据；模型要引用必须再调用 ``read_passages``。
-"""
-
 from __future__ import annotations
 
 from typing import Literal

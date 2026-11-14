@@ -1,5 +1,3 @@
-"""模块 2（schemas）验收测试。"""
-
 from __future__ import annotations
 
 import unittest
@@ -91,7 +89,6 @@ class PageTest(unittest.TestCase):
         self.assertFalse(page.is_blank)
 
     def test_blank_page_requires_flag(self) -> None:
-        # 空文本页必须标 is_blank=True
         with self.assertRaises(ValidationError):
             Page(paper_id="paper_001", page_index=0, page_number=1, text="")
 

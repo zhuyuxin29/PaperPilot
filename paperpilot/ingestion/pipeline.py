@@ -1,24 +1,3 @@
-"""入库编排（模块 6）：把上传的 PDF 变成可查询文献。
-
-一次入库的产物：
-
-- ``{data_dir}/paper_001/source.pdf``      原始文件
-- ``{data_dir}/paper_001/chunks.jsonl``    片段快照（可读、可用于重建索引）
-- SQLite：``papers / pages / chunks``      可查询索引
-
-规则：
-
-- 同一 SHA-256 的文件只建一篇（去重），第二次上传直接返回已有文献；
-- 写入顺序：临时目录 → 原子改名 → 数据库事务；任一步失败都清理，不留半成品；
-- 失败不写数据库记录（``FAILED`` 只用于“重试已失败文献”的场景）；
-- 有空白页或解析缺口 → ``PARTIAL``；全部正常 → ``READY``。
-
-边界：
-
-- 不做 PDF 解析与分块（交给 parser / chunker），不直接写 SQL（交给 storage），
-  不涉及界面；这里只做编排、文件落盘、去重和失败清理。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -40,8 +19,6 @@ _PAPER_DIR_RE = re.compile(r"^paper_(\d{3,})$")
 
 
 class IngestError(Exception):
-    """入库失败的基类；``code`` 供界面映射成可读提示。"""
-
     code = "INGEST_ERROR"
 
     def __init__(self, message: str, code: str | None = None) -> None:
@@ -52,8 +29,6 @@ class IngestError(Exception):
 
 
 class IngestValidationError(IngestError):
-    """上传内容本身不合法（空文件、超限、不是 PDF）。"""
-
     code = "INVALID_FILE"
 
 
@@ -76,11 +51,6 @@ def ingest_pdf(
     max_bytes: int = MAX_PDF_BYTES,
     paper_id: str | None = None,
 ) -> IngestResult:
-    """把一份 PDF 字节流入库；失败时抛 ``IngestError`` 或 parser 的错误。
-
-    ``paper_id`` 由后台入库入口预先分配时传入；此时跳过去重与 ID 分配，
-    事务/目录/状态仍走同一套流程。
-    """
     _validate_upload(data, max_bytes)
     display_name = _display_name(file_name)
     sha256 = hashlib.sha256(data).hexdigest()
@@ -104,7 +74,7 @@ def ingest_pdf(
                 duplicated=True,
             )
 
-        if existing is not None:  # 失败的旧记录：复用 ID 重试
+        if existing is not None:
             storage.delete_paper(conn, existing.id)
             paper_id = existing.id
         else:
@@ -123,7 +93,6 @@ def ingest_pdf(
         pages = cleaning.strip_repeated_headers(parsed.pages)
         chunks = chunker.chunk_pages(pages)
         if not chunks:
-            # 纯空白/纯扫描无文字 PDF：明确拒绝，避免留下无法建索引的 PARTIAL 记录。
             raise IngestError(
                 "PDF 中没有可检索文字，未入库；请先做 OCR 或换一份可复制文字的 PDF",
                 code="NO_CHUNKS",
@@ -166,9 +135,6 @@ def ingest_pdf(
     )
 
 
-# ---------------------------------------------------------------- 内部
-
-
 def _validate_upload(data: bytes, max_bytes: int) -> None:
     if not data:
         raise IngestValidationError("文件为空", code="EMPTY_FILE")
@@ -181,7 +147,6 @@ def _validate_upload(data: bytes, max_bytes: int) -> None:
 
 
 def _display_name(file_name: str) -> str:
-    """只保留文件名部分，避免路径穿越；空名回退为 document.pdf。"""
     name = Path(file_name).name.strip()
     return (name or "document.pdf")[:255]
 
@@ -196,11 +161,6 @@ def _fully_parsed(pages: tuple) -> bool:
 
 
 def _next_paper_id(settings: Settings, conn: sqlite3.Connection) -> str:
-    """生成下一个 paper_XXX：ID 只增不复用。
-
-    序号持久化在 schema_meta（``seq:paper_id``），删除论文不会让编号回退，
-    避免旧任务日志/缓存/外部引用与新论文混在一起。
-    """
     highest = storage.get_sequence(conn, "paper_id")
     if settings.data_dir.is_dir():
         for path in settings.data_dir.iterdir():
@@ -217,7 +177,6 @@ def _next_paper_id(settings: Settings, conn: sqlite3.Connection) -> str:
 
 
 def _write_chunks_snapshot(path: Path, chunks: list[Chunk]) -> None:
-    """写出可读片段快照：每行一个 JSON 对象。"""
     with path.open("w", encoding="utf-8") as handle:
         for chunk in chunks:
             record = {
@@ -237,7 +196,6 @@ def _cleanup(path: Path) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 def _rename_with_retry(source: Path, target: Path, attempts: int = 3) -> None:
-    """Rename with limited retries; antivirus/indexer may briefly lock files."""
     last_error: OSError | None = None
     for attempt in range(attempts):
         try:

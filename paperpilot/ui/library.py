@@ -1,5 +1,3 @@
-"""我的文献页：上传、选择、重新处理与删除。"""
-
 from __future__ import annotations
 
 import streamlit as st
@@ -59,4 +57,3 @@ def _render_library_page(settings, conn, chat_page=None) -> None:
                         _purge_paper(settings, conn, paper_id)
                     st.success("已删除")
                     st.rerun()
-

@@ -1,5 +1,3 @@
-"""文献操作：重新处理等后台动作。"""
-
 from __future__ import annotations
 
 import sqlite3

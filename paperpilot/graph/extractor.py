@@ -1,9 +1,3 @@
-"""图谱抽取（模块 11）：从片段中抽取受约束的关系声明。
-
-关系类型固定四种；每条声明必须带原文证据短句，程序会检查它是否真的
-出现在该片段里（对不上的标为待复核，不发布为有效关系）。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -19,7 +13,7 @@ from ..llm import ChatMessage, ChatProvider
 from ..schemas import Chunk
 from .client import EXTRACTOR_VERSION, GraphError
 
-# 每种关系允许的主语/宾语类型
+
 EXPECTED_TYPES: dict[str, tuple[set[str], set[str]]] = {
     "USES_METHOD": ({"Paper"}, {"Method"}),
     "APPLIED_IN": ({"Method"}, {"Experiment"}),
@@ -84,11 +78,6 @@ def extract_claims(
     batch_size: int = 5,
     cache_dir: Path | None = None,
 ) -> list[ExtractedClaim]:
-    """按批次抽取关系声明；模型输出不合法时抛 ``GraphError``。
-
-    传入 ``cache_dir`` 时按（模型 + 抽取版本 + 批次原文）缓存模型输出，
-    图谱重建且片段未变化时不再重复调用模型。
-    """
     claims: list[ExtractedClaim] = []
     step = max(1, batch_size)
     for start in range(0, len(chunks), step):
@@ -144,7 +133,7 @@ def _extract_batch(
             )
             os.replace(tmp, path)
         except OSError:
-            pass  # 缓存失败不影响抽取结果
+            pass
     return payload
 
 
@@ -202,7 +191,6 @@ def _build_claim(raw, batch: Sequence[Chunk]) -> ExtractedClaim | None:
 
 
 def _normalize(text: str) -> str:
-    """对齐比较忽略空白：PDF 提取常在中文词之间插入空格（“产 教 融 合”）。"""
     return re.sub(r"\s+", "", text).lower()
 
 

@@ -1,13 +1,3 @@
-"""数据结构（模块 2）：文献、页、片段的最小契约。
-
-约定（后续模块共同遵守）：
-- ``page_index`` 从 0 开始（PDF 内部页序），``page_number = page_index + 1``（界面显示）；
-- 片段偏移是**页级 raw_text** 的字符位置：0 起始、左闭右开 ``[start_offset, end_offset)``；
-- ``chunk_id`` 稳定且可重建，由文献 ID、修订、页序、片段序号与文本指纹派生
-  （具体生成规则在分块模块实现，本模块只校验格式）；
-- 所有模型禁止额外字段，构造后不可变，避免下游误改。
-"""
-
 from __future__ import annotations
 
 import re
@@ -25,16 +15,12 @@ _sha256_re = re.compile(SHA256_PATTERN)
 
 
 class GraphMode(str, Enum):
-    """图谱开关；与 config.GRAPH_MODES 保持一致。"""
-
     OFF = "off"
     AUTO = "auto"
     ON = "on"
 
 
 class PaperState(str, Enum):
-    """文献处理状态（能力状态在存储模块单独记录，此处为文献级状态）。"""
-
     UPLOADED = "uploaded"
     PARSING = "parsing"
     READY = "ready"
@@ -43,8 +29,6 @@ class PaperState(str, Enum):
 
 
 class _Frozen(BaseModel):
-    """项目内数据结构基类：禁止未知字段、构造后不可变。"""
-
     model_config = ConfigDict(frozen=True, extra="forbid")
 
 
@@ -67,8 +51,6 @@ class Paper(_Frozen):
 
 
 class Page(_Frozen):
-    """一页原文。扫描页没有可提取文本时 ``is_blank=True``，不能当作成功解析。"""
-
     paper_id: str = Field(pattern=_PAPER_ID_PATTERN)
     revision: int = Field(default=1, ge=1)
     page_index: int = Field(ge=0)
@@ -92,8 +74,6 @@ class Page(_Frozen):
 
 
 class Chunk(_Frozen):
-    """检索与证据的基本单位：页内片段 + 页级字符偏移。"""
-
     chunk_id: str = Field(pattern=CHUNK_ID_PATTERN)
     paper_id: str = Field(pattern=_PAPER_ID_PATTERN)
     revision: int = Field(default=1, ge=1)
@@ -123,18 +103,14 @@ class Chunk(_Frozen):
 
 
 def page_number_for_index(page_index: int) -> int:
-    """0 起始的页序 → 1 起始的显示页码。"""
     if page_index < 0:
         raise ValueError(f"page_index 不能为负数：{page_index}")
     return page_index + 1
 
 
 def is_valid_sha256(value: str) -> bool:
-    """供上传去重等场景使用的轻量校验。"""
     return bool(_sha256_re.fullmatch(value.strip().lower()))
 
-
-# ---------------------------------------------------------------- 七类要点（模块 10）
 
 SUMMARY_KEYS: tuple[str, ...] = (
     "background",
@@ -159,8 +135,6 @@ class StatementKind(str, Enum):
 
 
 class SummaryItem(_Frozen):
-    """一条要点：必须带引用；区分作者原话与助手分析。"""
-
     text: str = Field(min_length=1, max_length=2000)
     statement_kind: StatementKind = StatementKind.REPORTED
     evidence_ids: tuple[str, ...] = Field(min_length=1)
@@ -187,8 +161,6 @@ class SummarySection(_Frozen):
 
 
 class SummaryCoverage(_Frozen):
-    """覆盖度：计划完成率与文档覆盖比例是两个不同的量。"""
-
     planned_units: int = Field(ge=0)
     processed_units: int = Field(ge=0)
     failed_units: tuple[str, ...] = ()
@@ -225,8 +197,6 @@ class SummaryCoverage(_Frozen):
 
 
 class Summary(_Frozen):
-    """一篇论文的七类要点；七个键固定，多一个少一个都不合法。"""
-
     schema_version: str = Field(default="1.0", min_length=1, max_length=20)
     paper_id: str = Field(pattern=_PAPER_ID_PATTERN)
     revision: int = Field(ge=1)

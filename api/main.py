@@ -1,17 +1,3 @@
-"""PaperPilot 的 HTTP 接口层（模块 14）。
-
-与 Streamlit 前端解耦：
-- 业务逻辑全部调用 ``paperpilot`` 包，接口层只做参数校验、错误映射与序列化；
-- 每个请求使用独立 SQLite 连接；
-- LLM / 图谱连接按请求创建并在结束后关闭。
-
-启动::
-
-    uvicorn api.main:app --reload --port 8000
-
-接口文档：http://127.0.0.1:8000/docs
-"""
-
 from __future__ import annotations
 
 import logging
@@ -66,7 +52,6 @@ _GRAPH_STATE_UNSET = object()
 def _read_upload_limited(
     upload: UploadFile, max_bytes: int | None = None
 ) -> bytes:
-    """分块读取上传内容并在超限时立即拒绝，避免把大文件整体读进内存。"""
     limit = pipeline.MAX_PDF_BYTES if max_bytes is None else max_bytes
     declared = getattr(upload, "size", None)
     if isinstance(declared, int) and declared > limit:
@@ -133,9 +118,6 @@ app.add_middleware(
 )
 
 
-# ---------------------------------------------------------------- helpers
-
-
 def _paper_out(
     conn: sqlite3.Connection,
     paper,
@@ -187,9 +169,6 @@ def _graph_client(settings: Settings):
 def _summary_out(summary: Summary) -> SummaryOut:
     payload = summary.model_dump(mode="json")
     return SummaryOut(**payload)
-
-
-# ---------------------------------------------------------------- endpoints
 
 
 @app.get("/health", response_model=HealthOut, tags=["system"])
@@ -253,7 +232,6 @@ def upload_paper(
             detail={"code": "INGEST_FAILED", "message": "入库失败，请稍后重试。"},
         ) from exc
     if result.duplicated:
-        # 重复上传同一文件返回 200，而不是 201（未创建新资源）
         response.status_code = 200
     return _paper_out(conn, result.paper)
 

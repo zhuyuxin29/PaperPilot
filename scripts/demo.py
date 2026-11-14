@@ -1,16 +1,3 @@
-"""PaperPilot 一条命令演示：入库 → 索引 → 要点 → 问答 →（可选）图谱。
-
-用法::
-
-    python scripts/demo.py
-    python scripts/demo.py --pdf path/to/paper.pdf
-    python scripts/demo.py --question "这篇论文的主要方法是什么？"
-    python scripts/demo.py --with-graph
-    python scripts/demo.py --force-summary
-
-需要先在 .env 中配置 CHAT_API_KEY / EMBEDDING_API_KEY（或对应服务商 Key）。
-"""
-
 from __future__ import annotations
 
 import argparse

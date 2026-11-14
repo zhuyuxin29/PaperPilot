@@ -1,19 +1,3 @@
-"""评测数据集（模块 12）。
-
-格式：JSONL，每行一道题：
-
-{
-  "question_id": "q_001",
-  "paper_ids": ["paper_001"],
-  "question": "这篇论文的主要方法是什么？",
-  "question_type": "method",          # fact / term / method / relation / unanswerable
-  "answerable": true,
-  "gold_chunk_ids": ["chunk_a_02"],   # 人工标注的标准证据片段
-  "gold_evidence_groups": [["chunk_a_02"]],  # 可替代证据组：命中任一组即可
-  "reference_note": "标注说明（可选）"
-}
-"""
-
 from __future__ import annotations
 
 import json

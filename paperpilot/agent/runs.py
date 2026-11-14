@@ -1,4 +1,3 @@
-"""Durable task journal. Never store credentials or hidden model reasoning."""
 import json
 import os
 import uuid
@@ -32,7 +31,6 @@ def start(conn, question, paper_ids):
 
 
 def prune(conn, keep: int = 500):
-    """只保留最近 N 条任务日志，避免 agent_runs 无界增长。"""
     ensure(conn)
     if keep < 1:
         raise ValueError("keep 必须大于等于 1")
@@ -45,7 +43,6 @@ def prune(conn, keep: int = 500):
 
 
 def delete_for_paper(conn, paper_id: str) -> int:
-    """删除与指定论文关联的任务日志；返回删除条数。"""
     ensure(conn)
     rows = conn.execute("SELECT run_id, paper_ids FROM agent_runs").fetchall()
     targets = [
@@ -74,11 +71,6 @@ def finish(conn, identifier, status, result):
 
 
 def mark_interrupted(conn, run_id):
-    """Explicit recovery only: a different process may still own an active run.
-
-    Callers must confirm the old process has exited; do not blindly mark all
-    RUNNING tasks interrupted on every Streamlit rerun or API startup.
-    """
     ensure(conn)
     with conn:
         conn.execute("UPDATE agent_runs SET status='INTERRUPTED',updated_at=? WHERE run_id=? AND status='RUNNING'",
@@ -89,7 +81,7 @@ def _owner_alive(owner):
     try:
         pid = int(owner.split(":", 1)[0])
     except (ValueError, AttributeError):
-        return True  # Unknown owner is not proof that it has stopped.
+        return True
     if pid == os.getpid():
         return True
     if os.name == "nt":
@@ -102,7 +94,7 @@ def _owner_alive(owner):
         if handle:
             kernel.CloseHandle(handle)
             return True
-        return ctypes.get_last_error() != 87  # Access denied does not mean dead.
+        return ctypes.get_last_error() != 87
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

@@ -1,15 +1,3 @@
-"""PDF 解析（模块 4）：按页提取文本，生成 Page 契约。
-
-职责：
-- 打开 PDF、处理加密文档（可给密码）；
-- 逐页提取文本，保留原始文本（不做清洗）；
-- 标注空白页与提取异常，避免把扫描页当成“解析成功的空文本”。
-
-边界：
-- 不做 OCR、不做分块、不做清洗；偏移映射由分块模块负责；
-- 不写数据库，返回解析结果由调用方决定如何入库。
-"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -21,8 +9,6 @@ from ..schemas import Page
 
 
 class PdfParseError(Exception):
-    """PDF 解析失败的基类；``code`` 供上层映射成统一错误码。"""
-
     code = "PDF_PARSE_ERROR"
 
     def __init__(self, message: str) -> None:
@@ -31,27 +17,19 @@ class PdfParseError(Exception):
 
 
 class PdfEncryptedError(PdfParseError):
-    """文档已加密，且未提供可用密码。"""
-
     code = "PDF_ENCRYPTED"
 
 
 class PdfCorruptedError(PdfParseError):
-    """文件损坏或不是有效的 PDF。"""
-
     code = "PDF_CORRUPTED"
 
 
 class PdfEmptyError(PdfParseError):
-    """PDF 没有任何页面。"""
-
     code = "PDF_EMPTY"
 
 
 @dataclass(frozen=True)
 class ParseResult:
-    """一次解析的完整结果。"""
-
     paper_id: str
     revision: int
     pages: tuple[Page, ...]
@@ -71,14 +49,13 @@ def parse_pdf(
     revision: int = 1,
     password: str | None = None,
 ) -> ParseResult:
-    """按页解析 PDF；失败时抛 ``PdfParseError`` 子类。"""
     pdf_path = Path(path)
     if not pdf_path.is_file():
         raise FileNotFoundError(str(pdf_path))
 
     try:
         reader = PdfReader(str(pdf_path))
-    except Exception as exc:  # pypdf 对损坏文件抛出多种异常
+    except Exception as exc:
         raise PdfCorruptedError(f"无法读取 PDF：{exc}") from exc
 
     if reader.is_encrypted:

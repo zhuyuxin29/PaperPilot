@@ -1,5 +1,3 @@
-"""模块 8（evidence）验收测试：证据登记、原文回读、引用校验。"""
-
 from __future__ import annotations
 
 import tempfile
@@ -193,7 +191,7 @@ class PassagesTest(EvidenceTestBase):
         )
         self.assertEqual(len(passages), 1)
         self.assertEqual([item.chunk_id for item in passages[0].neighbors], [chunks[1].chunk_id])
-        # 相邻片段只是上下文，不登记为证据
+
         self.assertEqual(len(self.registry), 1)
 
     def test_bad_neighbor(self) -> None:

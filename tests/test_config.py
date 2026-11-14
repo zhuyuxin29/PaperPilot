@@ -1,5 +1,3 @@
-"""模块 1（config）验收测试：不依赖第三方库，可直接用 unittest 运行。"""
-
 from __future__ import annotations
 
 import json
@@ -70,7 +68,6 @@ class LoadSettingsTest(unittest.TestCase):
         )
 
     def test_capabilities_follow_config(self) -> None:
-        # 全空：都不可用；graph_mode=off 时即使有密码也不可用
         empty = config.load_settings(env={})
         self.assertEqual(
             empty.capabilities(),
@@ -147,7 +144,7 @@ class EnsureDirsTest(unittest.TestCase):
             settings = config.load_settings(env=env)
 
             settings.ensure_dirs()
-            settings.ensure_dirs()  # 第二次不应报错
+            settings.ensure_dirs()
 
             for path in (
                 settings.data_dir,
@@ -204,7 +201,7 @@ class LoadDotenvTest(unittest.TestCase):
                     "PAPERPILOT_DATA_DIR=\n",
                     encoding="utf-8",
                 )
-                # 已存在的环境变量优先
+
                 os.environ["GRAPH_MODE"] = "off"
                 config.load_dotenv(env_file)
 
@@ -219,7 +216,6 @@ class LoadDotenvTest(unittest.TestCase):
                     os.environ[key] = backup[key]
 
     def test_dotenv_with_bom(self) -> None:
-        """Windows 记事本/PowerShell 可能写出带 BOM 的 .env，首行键也要能读到。"""
         keys = ["PAPERPILOT_DATA_DIR"]
         backup = {key: os.environ.get(key) for key in keys}
         try:

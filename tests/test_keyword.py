@@ -1,5 +1,3 @@
-"""模块 12.5（keyword）验收测试：jieba 分词 + BM25。"""
-
 from __future__ import annotations
 
 import json

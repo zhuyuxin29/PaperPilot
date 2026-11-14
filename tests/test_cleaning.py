@@ -1,5 +1,3 @@
-"""模块 8.5（cleaning）验收测试：跨页页眉页脚清洗。"""
-
 from __future__ import annotations
 
 import unittest

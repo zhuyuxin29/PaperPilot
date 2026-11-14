@@ -1,19 +1,3 @@
-"""评测命令行（模块 12）。
-
-用法示例：
-
-    python -m evaluation.run --dataset evaluation/datasets/demo.jsonl --config A
-    python -m evaluation.run --dataset evaluation/datasets/demo.jsonl --config B
-    python -m evaluation.run --dataset evaluation/datasets/demo.jsonl --config C
-    python -m evaluation.run --dataset evaluation/datasets/demo.jsonl --config D
-
-配置说明：
-- A：固定流程 RAG（向量 + 关键词，无图谱）
-- B：固定流程 RAG + 图谱候选（RRF 融合）
-- C：Agent（不提供图谱工具）
-- D：Agent + 图谱工具
-"""
-
 from __future__ import annotations
 
 import argparse

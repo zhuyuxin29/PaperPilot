@@ -1,9 +1,3 @@
-"""Chroma 向量后端（可选，嵌入式持久化）。
-
-只负责向量存取，元数据带 paper_id / revision / page_number；
-检索时按论文 + 修订过滤，避免跨论文或旧修订泄漏。
-"""
-
 from __future__ import annotations
 
 from typing import Sequence

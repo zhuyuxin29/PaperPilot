@@ -1,5 +1,3 @@
-"""模块 10（summary generator）验收测试：生成、降级、缓存与工具。"""
-
 from __future__ import annotations
 
 import json

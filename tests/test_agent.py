@@ -1,5 +1,3 @@
-"""模块 9（agent）验收测试：循环、预算、重复调用、引用校验。"""
-
 from __future__ import annotations
 
 import tempfile

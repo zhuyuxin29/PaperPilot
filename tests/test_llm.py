@@ -1,5 +1,3 @@
-"""模块 8（llm / embedding）验收测试：不访问网络。"""
-
 from __future__ import annotations
 
 import unittest

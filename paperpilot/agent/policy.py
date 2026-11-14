@@ -1,5 +1,3 @@
-"""预算与停止条件（模块 9）。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass

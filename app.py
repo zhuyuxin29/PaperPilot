@@ -1,8 +1,3 @@
-"""PaperPilot 应用入口：组装导航、侧边栏与三个页面。
-
-业务逻辑在 ``paperpilot`` 包；页面实现拆到 ``paperpilot/ui``。
-"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -110,8 +105,6 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    # 直接 `python app.py` 时自动启动 Streamlit 并打开浏览器；
-    # 被 `streamlit run app.py` 启动时 runtime 已存在，直接执行页面。
     try:
         from streamlit import runtime as _streamlit_runtime
 

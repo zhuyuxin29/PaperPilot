@@ -1,16 +1,3 @@
-"""SQLite 存储（模块 3）：文献、页、片段的持久化。
-
-职责：
-- 打开连接（外键约束、忙等待、WAL）；
-- 建表与 ``schema_version`` 管理，重复调用安全；
-- 文献/页/片段的写入与读取，写入可重复执行（upsert）。
-
-边界：
-- 不连接任何外部数据库，只操作本地 SQLite 文件；
-- 不在这里做业务规则（如去重策略、删除语义），只提供数据访问；
-- 所有写入走事务，失败整体回滚，避免“文献写了、页没写”的半成品状态。
-"""
-
 from __future__ import annotations
 
 import json
@@ -89,12 +76,10 @@ _SCHEMA_STATEMENTS: tuple[str, ...] = (
 
 
 class SchemaVersionError(RuntimeError):
-    """数据库结构版本比当前代码新，拒绝写入以免破坏数据。"""
+    pass
 
 
 class StorageError(RuntimeError):
-    """数据库无法打开：目录不存在、不可写或路径错误。"""
-
     def __init__(self, path: Path | str, reason: str | None = None) -> None:
         self.path = Path(path)
         message = (
@@ -107,7 +92,6 @@ class StorageError(RuntimeError):
 
 
 def connect(db_path: Path | str) -> sqlite3.Connection:
-    """打开 SQLite 连接：启用外键、忙等待与 WAL（内存库不启用 WAL）。"""
     if isinstance(db_path, str) and db_path == ":memory:":
         conn = sqlite3.connect(":memory:")
     else:
@@ -127,7 +111,6 @@ def connect(db_path: Path | str) -> sqlite3.Connection:
 
 
 def ensure_schema(conn: sqlite3.Connection) -> int:
-    """建表并记录结构版本；可重复调用，返回当前版本。"""
     for statement in _SCHEMA_STATEMENTS:
         conn.execute(statement)
 
@@ -147,7 +130,6 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
                 "请升级程序或恢复备份，不要直接写入"
             )
         if version < SCHEMA_VERSION:
-            # 不做“只改版本号”的假升级：旧库必须显式迁移或重建，避免字段缺失。
             raise SchemaVersionError(
                 f"数据库结构版本 {version} 低于代码支持的 {SCHEMA_VERSION}；"
                 "请先备份并迁移数据，或重建数据目录（PAPERPILOT_DATA_DIR）。"
@@ -164,7 +146,6 @@ def current_schema_version(conn: sqlite3.Connection) -> int:
 
 
 def get_sequence(conn: sqlite3.Connection, name: str) -> int:
-    """读取持久化计数器（例如 paper_id 序号）；不存在返回 0。"""
     row = conn.execute(
         "SELECT value FROM schema_meta WHERE key = ?", (f"seq:{name}",)
     ).fetchone()
@@ -180,11 +161,7 @@ def set_sequence(conn: sqlite3.Connection, name: str, value: int) -> None:
         )
 
 
-# ---------------------------------------------------------------- 写入
-
-
 def save_paper(conn: sqlite3.Connection, paper: Paper) -> None:
-    """写入或更新文献记录（幂等）。"""
     with conn:
         _upsert_paper(conn, paper)
 
@@ -207,7 +184,6 @@ def save_document(
     pages: Sequence[Page] = (),
     chunks: Sequence[Chunk] = (),
 ) -> None:
-    """一次事务写入文献 + 页 + 片段；任一步失败整体回滚。"""
     with conn:
         _upsert_paper(conn, paper)
         for page in pages:
@@ -228,7 +204,6 @@ def update_paper_state(
 
 
 def delete_paper(conn: sqlite3.Connection, paper_id: str) -> bool:
-    """硬删除文献及其页/片段（级联）；返回是否真的删除了记录。"""
     with conn:
         cursor = conn.execute("DELETE FROM papers WHERE id = ?", (paper_id,))
         return cursor.rowcount > 0
@@ -244,7 +219,6 @@ def save_graph_state(
     claim_count: int = 0,
     error: str | None = None,
 ) -> None:
-    """记录图谱构建状态（SQLite 侧的能力状态）。"""
     now = datetime.now(timezone.utc).isoformat()
     with conn:
         conn.execute(
@@ -284,12 +258,8 @@ def get_graph_state(
 def list_graph_states(
     conn: sqlite3.Connection,
 ) -> dict[str, dict[str, object]]:
-    """一次查询返回所有论文的图谱状态，供列表接口避免 N+1。"""
     rows = conn.execute("SELECT * FROM paper_graph_state").fetchall()
     return {str(row["paper_id"]): dict(row) for row in rows}
-
-
-# ---------------------------------------------------------------- 读取
 
 
 def get_paper(conn: sqlite3.Connection, paper_id: str) -> Paper | None:
@@ -300,7 +270,6 @@ def get_paper(conn: sqlite3.Connection, paper_id: str) -> Paper | None:
 def find_paper_by_sha256(
     conn: sqlite3.Connection, sha256: str
 ) -> Paper | None:
-    """按文件哈希查重（同一工作区内的去重依据）。"""
     row = conn.execute(
         "SELECT * FROM papers WHERE sha256 = ? ORDER BY created_at LIMIT 1",
         (sha256.strip().lower(),),
@@ -351,7 +320,6 @@ def get_chunks(
 def get_chunk_ids(
     conn: sqlite3.Connection, paper_id: str, revision: int = 1
 ) -> list[str]:
-    """只取当前修订的片段 ID，用于检索范围过滤，不加载正文。"""
     rows = conn.execute(
         "SELECT chunk_id FROM chunks WHERE paper_id = ? AND revision = ? "
         "ORDER BY ordinal",
@@ -363,12 +331,11 @@ def get_chunk_ids(
 def get_chunks_by_ids(
     conn: sqlite3.Connection, chunk_ids: Sequence[str]
 ) -> dict[str, Chunk]:
-    """按 chunk_id 批量取片段正文，用于检索融合后的候选回表。"""
     unique = [chunk_id for chunk_id in dict.fromkeys(chunk_ids) if chunk_id]
     if not unique:
         return {}
     result: dict[str, Chunk] = {}
-    # SQLite 单条语句的变量数量有限，按 400 个一批查询。
+
     for start in range(0, len(unique), 400):
         batch = unique[start : start + 400]
         placeholders = ",".join("?" for _ in batch)
@@ -384,7 +351,6 @@ def get_chunks_by_ids(
 def get_paper_counts(
     conn: sqlite3.Connection, paper_id: str, revision: int = 1
 ) -> tuple[int, int]:
-    """返回（页数, 片段数），只做 COUNT，不读取正文。"""
     row = conn.execute(
         "SELECT (SELECT COUNT(*) FROM pages WHERE paper_id = ? AND revision = ?) "
         "AS page_count, "
@@ -398,7 +364,6 @@ def get_paper_counts(
 def list_paper_counts(
     conn: sqlite3.Connection,
 ) -> dict[str, tuple[int, int]]:
-    """一次查询返回所有论文当前修订的（页数, 片段数），供列表接口使用。"""
     rows = conn.execute(
         """
         SELECT p.id AS id,
@@ -420,9 +385,6 @@ def get_chunk(conn: sqlite3.Connection, chunk_id: str) -> Chunk | None:
         "SELECT * FROM chunks WHERE chunk_id = ?", (chunk_id,)
     ).fetchone()
     return _chunk_from_row(row) if row is not None else None
-
-
-# ---------------------------------------------------------------- 内部
 
 
 def _upsert_paper(conn: sqlite3.Connection, paper: Paper) -> None:

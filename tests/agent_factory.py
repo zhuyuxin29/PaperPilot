@@ -1,4 +1,3 @@
-"""Explicit final-answer fixtures used by scripted chat providers."""
 import json
 import re
 

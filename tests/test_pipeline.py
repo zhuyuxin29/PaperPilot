@@ -1,5 +1,3 @@
-"""模块 6（pipeline）验收测试：入库编排、去重、落盘、失败清理。"""
-
 from __future__ import annotations
 
 import hashlib

@@ -1,5 +1,3 @@
-"""模块 7（最小界面）验收测试：辅助函数 + Streamlit 无头冒烟测试。"""
-
 from __future__ import annotations
 
 import os

@@ -1,5 +1,3 @@
-"""源文献面板：PDF 按页渲染、缩放与下载。"""
-
 from __future__ import annotations
 
 import base64
@@ -17,7 +15,6 @@ from paperpilot.config import Settings
 def _render_pdf_page(
     pdf_path: str, page_index: int, scale: float = 1.6
 ) -> bytes | None:
-    """把 PDF 指定页渲染成 PNG，供右侧原文栏显示。"""
     try:
         document = pdfium.PdfDocument(pdf_path)
         page = document[page_index]
@@ -33,7 +30,6 @@ def _render_pdf_page(
 def _render_source_panel(
     settings: Settings, conn: sqlite3.Connection, paper_id: str
 ) -> None:
-    """右侧原文栏：按页查看 PDF（只渲染当前页）＋缩放＋收起。"""
     info = _paper_info(settings, conn, paper_id)
     if info is None:
         return
@@ -103,7 +99,7 @@ def _render_source_panel(
         )
     st.caption(f"第 {current_page} / {page_count} 页")
 
-    # 只渲染当前页，避免每次 rerun 把所有页都转成 base64 塞进 HTML。
+
     image = _render_pdf_page(pdf_path, current_page - 1)
     if image is None:
         st.info("这一页暂时无法渲染。")
@@ -127,5 +123,3 @@ def _render_source_panel(
         value=int(st.session_state.get(f"source_zoom_{paper_id}", 100)),
         key=f"source_zoom_{paper_id}",
     )
-
-

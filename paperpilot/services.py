@@ -1,4 +1,3 @@
-"""Shared preparation workflows for UI and API; preserve usable revisions on failure."""
 from __future__ import annotations
 
 import hashlib
@@ -25,7 +24,6 @@ _guard = threading.Lock()
 
 @contextmanager
 def document_lock(settings):
-    # One local process may have multiple Streamlit sessions / API threads.
     key = str(settings.data_dir.resolve())
     with _guard:
         lock = _locks.setdefault(key, threading.RLock())
@@ -52,7 +50,6 @@ def ensure_index(conn, settings, paper_id, provider=None):
 
 
 def prepare_paper(data, file_name, settings, conn, *, provider=None):
-    """Keep parsed documents when indexing fails; uploading again retries the index."""
     with document_lock(settings):
         result = pipeline.ingest_pdf(data, file_name, settings, conn)
         try:
@@ -73,10 +70,6 @@ def start_background_ingest(
     data: bytes,
     file_name: str,
 ) -> tuple[Paper, bool]:
-    """登记 PARSING 占位记录并提交后台入库；返回（论文, 是否新建任务）。
-
-    已存在且未失败的同一文件直接返回（duplicated）；失败记录复用原 ID 重试。
-    """
     with document_lock(settings):
         sha256 = hashlib.sha256(data).hexdigest()
         existing = storage.find_paper_by_sha256(conn, sha256)
@@ -110,14 +103,12 @@ def start_background_ingest(
 
 
 def wait_for_background(paper_id: str, timeout: float = 10.0) -> None:
-    """等待该论文的后台入库线程结束（测试/维护入口使用）。"""
     thread = _BACKGROUND_THREADS.get(paper_id)
     if thread is not None:
         thread.join(timeout)
 
 
 def _background_ingest(settings, data: bytes, file_name: str, paper_id: str) -> None:
-    """后台线程：解析/分块/入库/建索引，失败时把占位记录标为 FAILED。"""
     conn = None
     try:
         conn = storage.connect(settings.db_path)
@@ -154,11 +145,6 @@ def _background_ingest(settings, data: bytes, file_name: str, paper_id: str) -> 
 
 
 def reprocess_paper(settings, conn, paper_id, *, provider=None):
-    """Build a new revision before atomically switching SQLite's current revision.
-
-    The source PDF and older pages/chunks/summaries remain intact. Derived files
-    for an unpublished revision may be retried; they are never queried as current.
-    """
     with document_lock(settings):
         paper = storage.get_paper(conn, paper_id)
         if paper is None:
@@ -188,7 +174,7 @@ def reprocess_paper(settings, conn, paper_id, *, provider=None):
             )
             pipeline._write_chunks_snapshot(pending, chunks)
             os.replace(pending, snapshot)
-            # This transaction is the publication point. Prior revisions survive.
+
             storage.save_document(conn, updated, pages, chunks)
         finally:
             temporary.close()

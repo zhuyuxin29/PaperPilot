@@ -1,15 +1,3 @@
-"""模型适配（模块 8）：Embedding 提供者。
-
-支持：
-- SiliconFlow（OpenAI 兼容 ``/embeddings``），默认 ``BAAI/bge-m3``（1024 维）；
-- HashEmbedding：确定性哈希向量，仅用于开发与测试，**没有任何语义**。
-
-边界：
-- 不打印、不记录 API Key；
-- 只负责“文本 → 向量”，并校验返回条数与维度；
-- 网络失败、鉴权失败、返回格式异常分别给出明确错误码。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -29,7 +17,7 @@ DEFAULT_MODEL = "BAAI/bge-m3"
 DEFAULT_DIMENSION = 1024
 _BATCH_SIZE = 32
 
-# 复用连接池；仅对网络错误和限流/暂时性 5xx 做有限重试。
+
 _SESSION = requests.Session()
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
@@ -56,7 +44,6 @@ def _post_with_retry(
     headers: dict,
     timeout: float,
 ) -> object:
-    """统一 POST 重试：网络异常、429 与 5xx 最多尝试 3 次。"""
     last_error: Exception | None = None
     for attempt in range(_MAX_ATTEMPTS):
         try:
@@ -81,8 +68,6 @@ _CJK_CHAR = re.compile(r"[\u3400-\u9fff\uf900-\ufaff]")
 
 
 class EmbeddingError(RuntimeError):
-    """Embedding 失败基类；``code`` 供上层映射成用户可读提示。"""
-
     def __init__(self, message: str, code: str = "EMBEDDING_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -107,8 +92,6 @@ def _tokens(text: str) -> list[str]:
 
 
 class HashEmbedding:
-    """确定性哈希向量：同一文本永远同一向量，用于流程验证与测试。"""
-
     name = "hash"
 
     def __init__(self, dimension: int = 256) -> None:
@@ -134,8 +117,6 @@ class HashEmbedding:
 
 
 class SiliconFlowEmbedding:
-    """硅基流动（OpenAI 兼容）Embedding 客户端。"""
-
     name = "siliconflow"
 
     def __init__(
@@ -157,7 +138,7 @@ class SiliconFlowEmbedding:
             raise ValueError("dimension 必须为正数")
         self._api_key = api_key
         self.model = model
-        # 索引里记录 provider+model：换模型（即使维度相同）也会被判过期，避免静默混用
+
         self.name = f"siliconflow:{model}"
         self.base_url = base_url.rstrip("/")
         self.dimension = dimension
@@ -230,11 +211,6 @@ class SiliconFlowEmbedding:
 
 
 def create_embedding_provider(settings: Settings, *, post=None) -> EmbeddingProvider:
-    """按配置创建 embedding 提供者。
-
-    ``provider=hash`` 仅用于开发测试；其余 OpenAI 兼容服务都走同一实现。
-    未配置或不可用时抛 ``EmbeddingError``，不静默退回无语义向量。
-    """
     provider = (settings.embedding_provider or "").strip().lower()
     if provider == "hash":
         return HashEmbedding(settings.embedding_dimension or 256)
@@ -258,12 +234,7 @@ def create_embedding_provider(settings: Settings, *, post=None) -> EmbeddingProv
     )
 
 
-# ---------------------------------------------------------------- 对话模型
-
-
 class ChatError(RuntimeError):
-    """对话模型调用失败；``code`` 供上层映射。"""
-
     def __init__(self, message: str, code: str = "CHAT_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -307,8 +278,6 @@ class ChatProvider(Protocol):
 
 
 class OpenAICompatibleChat:
-    """OpenAI 兼容的对话接口（DeepSeek / SiliconFlow 等），支持工具调用。"""
-
     def __init__(
         self,
         api_key: str,
@@ -447,7 +416,6 @@ class OpenAICompatibleChat:
 
 
 def create_chat_provider(settings: Settings, *, post=None) -> ChatProvider:
-    """按配置创建对话模型；默认按 DeepSeek 的 OpenAI 兼容接口。"""
     provider = (settings.chat_provider or "").strip().lower()
     if not settings.chat_api_key:
         raise ChatError(

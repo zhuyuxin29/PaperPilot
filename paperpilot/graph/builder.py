@@ -1,11 +1,3 @@
-"""图谱构建（模块 11）：抽取 → 校验 → 幂等写入 Neo4j → 记录状态。
-
-边界：
-- 只写“关系声明 + 片段指针”，不写全文；实体 ID 由程序生成，模型不决定主键；
-- 证据对不上的声明写为 ``pending_review``，查询只返回 ``validated``；
-- 图谱失败不影响普通检索与问答（GRAPH_MODE=off 时完全不连 Neo4j）。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -64,7 +56,7 @@ def build_paper_graph(
         batch_size=batch_size,
         cache_dir=settings.data_dir / "graph_cache",
     )
-    # 抽取成功后再清空旧图，避免抽取失败把已有图谱删掉
+
     if hasattr(client, "clear_paper_graph"):
         client.clear_paper_graph(WORKSPACE_ID, paper_id)
 
@@ -114,7 +106,7 @@ def build_paper_graph(
     errors: list[str] = []
     entities: set[str] = set()
 
-    # 批量写入：真实客户端用 UNWIND，单事务多 claim；测试/自定义客户端逐条回退。
+
     batch_size = 40
     for start in range(0, len(records), batch_size):
         batch = records[start : start + batch_size]
@@ -194,7 +186,6 @@ def _json_dumps(value: dict) -> str:
 
 
 def main() -> None:
-    """python -m paperpilot.graph.builder [paper_id] [max_chunks]"""
     import sys
 
     from ..config import load_settings

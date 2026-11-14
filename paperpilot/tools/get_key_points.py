@@ -1,8 +1,3 @@
-"""get_key_points 工具：读取已生成的七类要点。
-
-只读缓存，不触发生成；缓存缺失/过期分别返回 ``not_generated`` / ``stale``。
-"""
-
 from __future__ import annotations
 
 import json

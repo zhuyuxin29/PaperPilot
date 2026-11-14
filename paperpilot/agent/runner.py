@@ -1,18 +1,3 @@
-"""受控 Agent 循环（模块 9）。
-
-职责：
-- 组织 system/user 消息，让模型决定“调用工具”还是“直接回答”；
-- 执行工具前检查预算、白名单与参数（由 ToolRegistry 完成）；
-- 把每次工具结果回填给模型，同时保存工具轨迹；
-- 到预算、重复调用、超时或答案校验失败时停止，并说明原因；
-- 发布前校验引用：答案里的 ``ev_xxx`` 必须来自本次运行的证据集合。
-
-边界：
-- 不直接拼 SQL / 读文件，所有能力都通过工具；
-- 不保存数据库连接、Qt 对象等不可序列化状态；
-- 不展示模型的隐藏推理，只记录工具动作与结果。
-"""
-
 from __future__ import annotations
 
 import json
@@ -89,7 +74,6 @@ def _run_agent(
     cancel_event: threading.Event | None = None,
     run_id: str | None = None,
 ) -> AgentResult:
-    """执行一次受控问答；模型异常（网络/鉴权）向上抛 ``ChatError``。"""
     budget = budget or Budget.from_settings(settings)
     state = AgentState(question=question, paper_ids=tuple(paper_ids))
     context = ToolContext(
@@ -267,14 +251,12 @@ def _run_agent(
 
 
 def run_agent(**kwargs) -> AgentResult:
-    """Persist run state, preserving a failed/interrupted task for later inspection."""
     from dataclasses import asdict, replace
     from .. import storage
     conn = kwargs["conn"]
     settings = kwargs["settings"]
 
-    # 只在“建立任务 / 校验修订 / 收尾写库”时持锁；Agent 循环（LLM 调用 + 工具）不持锁，
-    # 避免一次长达 timeout 秒的问答阻塞同数据目录下的上传 / 重处理 / 删除。
+
     with document_lock(settings):
         if settings.graph_mode == "on":
             from ..services import graph_ready
@@ -311,7 +293,7 @@ def _validate_text(
     cited = tuple(dict.fromkeys(
         identifier for claim in final.claims for identifier in claim.evidence_ids
     ))
-    # Reject hidden handwritten references as well as nonexistent structured IDs.
+
     if any(_cited_ids(claim.text) for claim in final.claims):
         return (), ("INVALID_FORMAT",)
     try:
@@ -333,7 +315,6 @@ def _repair_citations(
     budget: Budget,
     timeout: float,
 ) -> str | None:
-    """答案引用无效时，让模型只基于已登记证据重写一次；失败返回 None。"""
     if state.step_count >= budget.max_steps:
         return None
 

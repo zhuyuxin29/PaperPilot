@@ -1,5 +1,3 @@
-"""评测报告（模块 12）：把结果渲染为 Markdown。"""
-
 from __future__ import annotations
 
 

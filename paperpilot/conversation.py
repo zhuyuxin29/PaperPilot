@@ -1,8 +1,3 @@
-"""多轮对话：把追问改写成独立问题。
-
-历史只用于理解指代，不作为证据；改写失败时回退原问题。
-"""
-
 from __future__ import annotations
 
 from typing import Sequence
@@ -21,7 +16,6 @@ def rewrite_followup(
     *,
     max_turns: int = 3,
 ) -> str:
-    """history 元素形如 {"question": ..., "answer": ...}。失败返回原问题。"""
     recent = [turn for turn in history if turn.get("question")][-max_turns:]
     if not recent:
         return question

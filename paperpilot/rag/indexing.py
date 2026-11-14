@@ -1,13 +1,3 @@
-"""向量索引（模块 8）：把片段向量持久化到本地索引文件。
-
-索引按“论文 + 修订”存放：``{data_dir}/index/paper_001.r1.npz``。
-
-规则：
-- 用 numpy 保存，不引入 Chroma；向量已归一化，检索时用点积得到余弦相似度；
-- 索引记录 provider 与维度；不一致视为过期，必须重建，**禁止混用不同模型的向量**；
-- 写入使用临时文件 + 原子替换，失败不留半成品。
-"""
-
 from __future__ import annotations
 
 import os
@@ -30,8 +20,6 @@ _PAPER_ID_RE = re.compile(r"^paper_\d{3,}$")
 
 
 class IndexBuildError(RuntimeError):
-    """索引构建/加载失败；``code`` 供上层映射成提示。"""
-
     def __init__(self, message: str, code: str = "INDEX_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -70,7 +58,6 @@ def build_paper_index(
     paper_id: str,
     revision: int = 1,
 ) -> IndexMeta:
-    """为指定论文修订建立向量索引（覆盖已有索引）。"""
     paper = storage.get_paper(conn, paper_id)
     if paper is None:
         raise IndexBuildError(f"文献不存在：{paper_id}", "PAPER_NOT_FOUND")
@@ -140,7 +127,6 @@ def build_paper_index(
 def _read_index_file(
     path_text: str, mtime_ns: int, size: int
 ) -> tuple[tuple[str, ...], np.ndarray, str, int]:
-    """按（路径, mtime, 大小）缓存磁盘索引；文件被替换后键自动失效。"""
     with np.load(path_text, allow_pickle=False) as data:
         chunk_ids = tuple(str(item) for item in data["chunk_ids"].tolist())
         vectors = np.array(data["vectors"], dtype=np.float32, copy=True)
@@ -156,7 +142,6 @@ def load_index(
     *,
     provider: EmbeddingProvider | None = None,
 ) -> IndexData | None:
-    """读取索引；不存在返回 None，与当前 provider 不匹配时抛 IndexBuildError。"""
     path = index_path(settings, paper_id, revision)
     if not path.is_file():
         return None
@@ -188,7 +173,6 @@ def index_ready(
     revision: int,
     provider: EmbeddingProvider,
 ) -> bool:
-    """索引存在且与当前 embedding 配置一致。"""
     try:
         return (
             load_index(settings, paper_id, revision, provider=provider) is not None
@@ -203,7 +187,6 @@ def build_all_indexes(
     provider: EmbeddingProvider,
     paper_ids: Sequence[str] | None = None,
 ) -> list[IndexMeta]:
-    """为文献库（或指定论文）批量重建索引。"""
     selected = set(paper_ids) if paper_ids else None
     metas: list[IndexMeta] = []
     for paper in storage.list_papers(conn):
@@ -214,7 +197,6 @@ def build_all_indexes(
                 build_paper_index(conn, settings, provider, paper.id, paper.revision)
             )
         except IndexBuildError as exc:
-            # 零片段论文不应让整批重建中断；其余错误照常抛出。
             if exc.code == "NO_CHUNKS":
                 continue
             raise
@@ -222,7 +204,6 @@ def build_all_indexes(
 
 
 def main() -> None:
-    """python -m paperpilot.rag.indexing [paper_id ...]：构建/重建向量索引。"""
     import sys
 
     from ..config import load_settings

@@ -1,9 +1,3 @@
-"""证据校验（模块 8）：引用必须属于本次运行，且在允许的论文范围内。
-
-后续 Agent 发布答案前调用这里：模型只能引用本次 ``read_passages`` 登记的
-``evidence_id``，不能引用检索候选、历史缓存或其他论文的证据。
-"""
-
 from __future__ import annotations
 
 from typing import Iterable
@@ -12,8 +6,6 @@ from .registry import EvidenceRecord, EvidenceRegistry
 
 
 class EvidenceError(RuntimeError):
-    """证据缺失或越界；``code`` 供上层映射成用户提示。"""
-
     def __init__(self, message: str, code: str = "EVIDENCE_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -25,7 +17,6 @@ def assert_evidence_in_scope(
     evidence_ids: Iterable[str],
     allowed_paper_ids: Iterable[str] | None = None,
 ) -> tuple[EvidenceRecord, ...]:
-    """校验并返回证据记录；不合法时抛 ``EvidenceError``。"""
     allowed = set(allowed_paper_ids) if allowed_paper_ids is not None else None
     records: list[EvidenceRecord] = []
     for evidence_id in evidence_ids:

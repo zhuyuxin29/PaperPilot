@@ -1,5 +1,3 @@
-"""模块 8（rag/indexing）验收测试：本地 numpy 索引，不联网。"""
-
 from __future__ import annotations
 
 import tempfile
@@ -101,7 +99,7 @@ class BuildAndLoadTest(IndexingTestBase):
         )
         self.assertEqual(first.chunk_count, second.chunk_count)
         self.assertTrue(second.path.is_file())
-        # 临时文件不应残留
+
         self.assertEqual(
             [p.name for p in self.settings.index_dir.iterdir() if ".tmp" in p.name],
             [],

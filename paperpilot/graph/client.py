@@ -1,9 +1,3 @@
-"""Neo4j 客户端与固定查询模板（模块 11）。
-
-只存“关系视图 + 片段指针”，不存全文、不做向量检索；
-图谱是辅助召回，不产生可引用证据——引用仍要 ``read_passages``。
-"""
-
 from __future__ import annotations
 
 from typing import Any
@@ -87,8 +81,6 @@ QUERY_TEMPLATES: dict[str, str] = {
 
 
 class GraphError(RuntimeError):
-    """图谱不可用或查询失败；``code`` 供上层映射。"""
-
     def __init__(self, message: str, code: str = "GRAPH_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -96,8 +88,6 @@ class GraphError(RuntimeError):
 
 
 class Neo4jClient:
-    """薄封装：连接、约束、写入一条 Claim、执行模板查询。"""
-
     def __init__(self, settings: Settings, driver=None) -> None:
         self._settings = settings
         self._driver = driver
@@ -124,7 +114,7 @@ class Neo4jClient:
                     auth=(settings.neo4j_username, settings.neo4j_password),
                     notifications_min_severity="OFF",
                 )
-            except TypeError:  # 旧驱动没有该参数
+            except TypeError:
                 driver = GraphDatabase.driver(
                     settings.neo4j_uri,
                     auth=(settings.neo4j_username, settings.neo4j_password),
@@ -132,7 +122,7 @@ class Neo4jClient:
             driver.verify_connectivity()
         except GraphError:
             raise
-        except Exception as exc:  # 驱动异常类型随版本变化，统一包装
+        except Exception as exc:
             raise GraphError(
                 f"无法连接 Neo4j：{exc}", "GRAPH_UNAVAILABLE"
             ) from exc
@@ -169,7 +159,6 @@ class Neo4jClient:
         self.write_claims([claim])
 
     def write_claims(self, claims: list[dict[str, Any]]) -> None:
-        """批量写入关系声明：一条 UNWIND 语句替代逐条往返，显著缩短构图时间。"""
         if not claims:
             return
         query = """
@@ -259,7 +248,6 @@ class Neo4jClient:
             self._driver.close()
 
     def clear_paper_graph(self, workspace_id: str, paper_id: str) -> None:
-        """重建前清空该论文的 Claim/Chunk/Paper（实体可能被其他论文共享，保留）。"""
         with self._session() as session:
             for statement in (
                 "MATCH (cl:Claim {workspace_id: $ws, paper_id: $pid}) "
@@ -271,7 +259,6 @@ class Neo4jClient:
                 session.run(statement, ws=workspace_id, pid=paper_id).consume()
 
     def delete_workspace(self, workspace_id: str) -> int:
-        """删除某工作区的全部图数据（测试/重置用）。"""
         with self._session() as session:
             result = session.run(
                 "MATCH (n {workspace_id: $workspace_id}) DETACH DELETE n "

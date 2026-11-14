@@ -1,5 +1,3 @@
-"""模块 8（rag/retrieval）验收测试：范围隔离、融合、稳定性。"""
-
 from __future__ import annotations
 
 import tempfile
@@ -73,7 +71,6 @@ class ScopeTest(RetrievalTestBase):
         )
 
     def test_other_paper_terms_do_not_leak(self) -> None:
-        # 查询 B 论文的术语，但范围只有 A：应返回空
         self.assertEqual(self.search("epsilon zeta", ["paper_001"]), [])
 
     def test_keyword_route_finds_term(self) -> None:
@@ -116,7 +113,6 @@ class StabilityTest(RetrievalTestBase):
         self.assertEqual(len(candidates), 1)
 
     def test_term_boost_defaults_to_pure_rrf(self) -> None:
-        # 默认 term_boost=0：规则词面加分不参与，排序完全由融合分决定。
         self.assertEqual(self.settings.retrieval_term_boost, 0.0)
 
         def chunk(chunk_id: str, text: str) -> Chunk:
@@ -168,7 +164,6 @@ class StabilityTest(RetrievalTestBase):
         self.assertEqual([c.rank for c in candidates], list(range(1, len(candidates) + 1)))
 
     def test_index_files_are_cached_between_queries(self) -> None:
-        # 前两次分别完成“首次建索引 / 首次读索引”，第三次应命中进程内缓存。
         self.search("alpha", ["paper_001"])
         self.search("alpha", ["paper_001"])
         before = (

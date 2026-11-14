@@ -1,4 +1,3 @@
-"""Merge human-readable chat archives with the durable execution journal."""
 import json
 from . import storage
 from .agent import runs

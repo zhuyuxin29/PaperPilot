@@ -1,5 +1,3 @@
-"""多轮对话改写测试。"""
-
 from __future__ import annotations
 
 import unittest

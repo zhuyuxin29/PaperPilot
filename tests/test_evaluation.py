@@ -1,5 +1,3 @@
-"""模块 12（evaluation）验收测试：指标、数据集、A/B 与 Agent 评测。"""
-
 from __future__ import annotations
 
 import json

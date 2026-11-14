@@ -1,12 +1,3 @@
-"""工具注册表（模块 9）。
-
-规则：
-- 只有注册过的工具才能被模型调用（白名单），未知工具返回 ``UNKNOWN_TOOL``；
-- 参数用 Pydantic 校验，失败返回 ``BAD_ARGUMENTS``；
-- 每个结果都带 ``tool_call_id``，成功/失败使用同一结构，便于回填给模型；
-- 工具只能通过 ``ToolContext`` 访问数据库、embedding 与证据集合，论文范围由程序注入。
-"""
-
 from __future__ import annotations
 
 import json
@@ -23,8 +14,6 @@ from ..llm import EmbeddingProvider, ToolCall
 
 
 class ToolError(RuntimeError):
-    """工具执行失败；``code`` 会原样返回给上层。"""
-
     def __init__(
         self, message: str, code: str = "TOOL_ERROR", retryable: bool = False
     ) -> None:
@@ -96,8 +85,6 @@ class ToolSpec:
 
 
 class ToolRegistry:
-    """白名单工具注册表。"""
-
     def __init__(self) -> None:
         self._specs: dict[str, ToolSpec] = {}
 
@@ -135,7 +122,7 @@ class ToolRegistry:
             return self._error(
                 call, exc.code, exc.message, started, retryable=exc.retryable
             )
-        except Exception as exc:  # 检索/证据/embedding 错误统一映射
+        except Exception as exc:
             code = getattr(exc, "code", "TOOL_ERROR")
             retryable = code in {"EMBEDDING_NETWORK", "INDEX_STALE", "RETRIEVAL_ERROR"}
             return self._error(call, code, str(exc), started, retryable=retryable)

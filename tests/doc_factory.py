@@ -1,5 +1,3 @@
-"""测试用文献/页/片段工厂（不进入 paperpilot 包）。"""
-
 from __future__ import annotations
 
 from paperpilot.schemas import Chunk, Page, Paper

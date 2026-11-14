@@ -1,21 +1,3 @@
-"""分块（模块 5）：把页内原文切成可检索、可引用的片段。
-
-规则（首版）：
-- 只在页内切分，不跨页合并（跨页合并需要额外的偏移规则，后续再加）；
-- 先按空行分段，再把相邻段落合并到目标 token 预算附近；
-- 超长段落**优先按句子边界切分**（。！？；与英文句末标点），再合并句子到目标预算，
-  只有单句本身超限时才退回字符窗口 —— 避免从句子中间切断；
-- ``chunk.text`` 必须等于 ``page.text[start_offset:end_offset]``（逐字符一致）；
-- ``chunk_id`` 稳定：由 paper_id、revision、页码、全局序号、分块版本与内容指纹派生，
-  同一输入重复执行得到相同 ID；
-- ``ordinal`` 是文献修订内的全局序号，配合数据库唯一约束防止重复片段；
-- 空白页不产生片段。
-
-边界：
-- token 是估算值（中日韩字符按 1 token、其他按约 4 字符 1 token），不是精确分词；
-- 不做清洗、不改写原文，避免破坏偏移映射。
-"""
-
 from __future__ import annotations
 
 import hashlib
@@ -31,8 +13,6 @@ _CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
 
 @dataclass(frozen=True)
 class ChunkingConfig:
-    """分块参数。初始值来自实施方案，需在真实论文上调整并记录版本。"""
-
     target_tokens: int = 600
     max_tokens: int = 900
     min_tokens: int = 1
@@ -53,7 +33,6 @@ DEFAULT_CONFIG = ChunkingConfig()
 
 
 def estimate_tokens(text: str) -> int:
-    """轻量 token 估算：CJK 字符按 1 个，其余按 4 字符 1 个。"""
     cjk = len(_CJK_RE.findall(text))
     other = max(0, len(text) - cjk)
     return cjk + (other + 3) // 4
@@ -63,7 +42,6 @@ def chunk_pages(
     pages: Sequence[Page],
     config: ChunkingConfig = DEFAULT_CONFIG,
 ) -> list[Chunk]:
-    """把一组页切成片段，按文档顺序返回（ordinal 从 0 递增）。"""
     chunks: list[Chunk] = []
     ordinal = 0
     for page in pages:
@@ -134,7 +112,6 @@ def _page_ranges(page: Page, config: ChunkingConfig) -> list[tuple[int, int]]:
 
 
 def _iter_blocks(text: str) -> list[tuple[int, int]]:
-    """按空行分段，返回每段的 [start, end)（已去掉首尾空白）。"""
     blocks: list[tuple[int, int]] = []
     offset = 0
     block_start: int | None = None
@@ -163,7 +140,6 @@ def _split_long_block(
     target_tokens: int,
     max_tokens: int,
 ) -> list[tuple[int, int]]:
-    """超长段落：先按句子边界切，再合并；单句超限才退回字符窗口。"""
     ranges: list[tuple[int, int]] = []
     current_start: int | None = None
     current_end = 0
@@ -203,7 +179,6 @@ def _split_long_block(
 
 
 def _sentence_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
-    """按句末标点切句；英文句点只在后面跟空白/结尾时才算句末。"""
     spans: list[tuple[int, int]] = []
     segment_start = start
     index = start
@@ -236,16 +211,11 @@ def _sentence_spans(text: str, start: int, end: int) -> list[tuple[int, int]]:
 def _window_split(
     text: str, start: int, end: int, max_tokens: int
 ) -> list[tuple[int, int]]:
-    """单句仍超限时的兜底：按 token 预算切分，每块不超过 ``max_tokens`` 个 token。
-
-    之前这里把 ``max_tokens``（token 数）直接当作字符窗口，对英文会明显低估窗口
-    （900 字符 ≈ 225 token）。现在按真实 token 估算二分查找切点，语义与参数名一致。
-    """
     ranges: list[tuple[int, int]] = []
     cursor = start
     while cursor < end:
         lo, hi = cursor, end
-        # 找到满足 estimate_tokens(text[cursor:mid]) <= max_tokens 的最大 mid
+
         while lo < hi:
             mid = (lo + hi + 1) // 2
             if estimate_tokens(text[cursor:mid]) <= max_tokens:
@@ -253,7 +223,7 @@ def _window_split(
             else:
                 hi = mid - 1
         stop = lo
-        if stop == cursor:  # 单个字符即超预算的极端情况：至少前进一位
+        if stop == cursor:
             stop = min(cursor + 1, end)
         ranges.append((cursor, stop))
         cursor = stop

@@ -1,8 +1,3 @@
-"""论文数据清理（删除论文时复用）。
-
-清理范围：SQLite 记录、论文目录、索引文件、要点缓存、Neo4j 节点。
-"""
-
 from __future__ import annotations
 
 import shutil
@@ -16,7 +11,6 @@ from .services import document_lock
 def purge_paper(settings, conn, paper_id, *, clear_graph=True):
     with document_lock(settings):
         return _purge_paper(settings, conn, paper_id, clear_graph=clear_graph)
-
 
 
 def _purge_paper(

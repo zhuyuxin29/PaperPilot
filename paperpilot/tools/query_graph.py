@@ -1,9 +1,3 @@
-"""query_graph 工具：图谱关系召回（只读，返回关系声明 + chunk_id）。
-
-图谱是辅助召回：只返回“关系声明 + 来源片段指针”，不返回原文；
-模型要引用必须再用 read_passages 回读并登记证据。
-"""
-
 from __future__ import annotations
 
 from typing import Literal

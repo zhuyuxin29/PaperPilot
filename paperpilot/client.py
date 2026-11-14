@@ -1,9 +1,3 @@
-"""PaperPilot HTTP 客户端：Streamlit 在 API 模式下调用后端。
-
-只依赖 ``requests``，与 FastAPI 后端解耦；后端地址由
-``PAPERPILOT_API_URL``（默认 http://127.0.0.1:8000）提供。
-"""
-
 from __future__ import annotations
 
 import time
@@ -29,7 +23,6 @@ class PaperPilotClient:
     def close(self) -> None:
         self.session.close()
 
-    # ------------------------------------------------------------ 内部
 
     def _request(
         self, method: str, path: str, **kwargs: Any
@@ -63,7 +56,6 @@ class PaperPilotClient:
             return None
         return response.json()
 
-    # ------------------------------------------------------------ 接口
 
     def health(self) -> dict:
         return self._request("GET", "/health")
@@ -99,7 +91,6 @@ class PaperPilotClient:
     def wait_for_paper(
         self, paper_id: str, *, timeout: float = 300.0, interval: float = 0.8
     ) -> dict:
-        """轮询后台入库状态，直到不再是 parsing/uploaded；失败状态也返回。"""
         deadline = time.monotonic() + timeout
         while True:
             paper = self.get_paper(paper_id)

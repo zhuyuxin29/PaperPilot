@@ -1,5 +1,3 @@
-"""模块 9（llm/chat）验收测试：对话模型解析与工厂。"""
-
 from __future__ import annotations
 
 import unittest

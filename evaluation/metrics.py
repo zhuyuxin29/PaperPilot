@@ -1,9 +1,3 @@
-"""评测指标（模块 12）。
-
-只做可自动计算的指标；答案“内容是否正确/引用是否支持结论”需要人工复核，
-报告里保留原始答案与引用，供人工检查。
-"""
-
 from __future__ import annotations
 
 from typing import Sequence
@@ -35,7 +29,6 @@ REFUSAL_MARKERS = (
 def recall_at_k(
     gold_chunk_ids: Sequence[str], retrieved: Sequence[str], k: int
 ) -> float | None:
-    """前 K 条命中多少标准相关片段；无标注返回 None。"""
     gold = {item for item in gold_chunk_ids if item}
     if not gold:
         return None
@@ -57,7 +50,6 @@ def evidence_group_coverage(
     retrieved: Sequence[str],
     k: int,
 ) -> float | None:
-    """必要证据组覆盖：每组至少命中一个片段才算覆盖。"""
     groups = [set(group) for group in gold_groups if group]
     if not groups:
         return None

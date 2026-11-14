@@ -1,4 +1,3 @@
-"""Validated final output; refusal text is rendered by the program."""
 from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 

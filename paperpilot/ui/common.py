@@ -1,5 +1,3 @@
-"""UI 公共常量、格式化与共享辅助函数。"""
-
 from __future__ import annotations
 
 import json
@@ -196,9 +194,6 @@ button[kind="primary"] { border-radius: 4px; background: var(--pp-navy); }
 """
 
 
-# ---------------------------------------------------------------- 通用
-
-
 def format_state(state: PaperState) -> str:
     return STATE_LABELS.get(state, state.value)
 
@@ -206,7 +201,6 @@ def format_state(state: PaperState) -> str:
 def paper_rows(
     conn: sqlite3.Connection, settings: Settings | None = None
 ) -> list[dict[str, object]]:
-    """文献库列表：每行带页数、片段数与图谱状态，供界面表格展示。"""
     if settings is not None and _http_mode(settings):
         try:
             papers = _api_client(settings).list_papers()
@@ -331,7 +325,6 @@ def _render_pdf_button(
 def _purge_paper(
     settings: Settings, conn: sqlite3.Connection, paper_id: str
 ) -> None:
-    """删除一篇论文的全部本地数据与图谱节点。"""
     from paperpilot.maintenance import purge_paper
     purge_paper(settings, conn, paper_id)
     chats = st.session_state.get("chats", {})
@@ -372,7 +365,6 @@ def _save_chat_history(
 def _renumber_citations(
     answer: str, citations: list[dict]
 ) -> tuple[str, dict[str, int]]:
-    """把答案里的 [ev_xxx] 按引用出现顺序改写成 [1] [2]…"""
     mapping = {
         citation["evidence_id"]: index
         for index, citation in enumerate(citations, start=1)
@@ -404,7 +396,3 @@ def _summary_to_markdown(summary: Summary, paper_title: str) -> str:
     lines.append("---")
     lines.append("由 PaperPilot 生成；引用编号对应生成时回读的原文片段。")
     return "\n".join(lines)
-
-
-# ---------------------------------------------------------------- 入口
-

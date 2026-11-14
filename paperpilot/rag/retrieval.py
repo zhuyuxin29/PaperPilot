@@ -1,13 +1,3 @@
-"""混合检索（模块 8）：向量召回 + 关键词召回 + RRF 融合。
-
-对外只暴露 ``search_chunks``：
-
-- 严格按 ``paper_ids`` 过滤，选 A 论文不会返回 B 的片段；
-- 只使用当前修订的片段，旧索引不会泄漏；
-- 同输入排序稳定（先按融合分，再按 chunk_id）；
-- 返回的是**候选**，不是证据；引用必须先 ``read_passages``。
-"""
-
 from __future__ import annotations
 
 import re
@@ -32,7 +22,7 @@ DEFAULT_PER_ROUTE = 20
 DEFAULT_RRF_K = 60
 DEFAULT_MIN_SIMILARITY = 0.0
 
-# 当前修订的 chunk_id 集合缓存；key 含 sha256，删除后重传同一文件可安全复用。
+
 _CURRENT_IDS_CACHE: "OrderedDict[tuple[str, str, int, str], frozenset[str]]" = (
     OrderedDict()
 )
@@ -62,8 +52,6 @@ def _current_chunk_ids(
 
 
 class RetrievalError(RuntimeError):
-    """检索参数或索引错误；``code`` 供上层映射成提示。"""
-
     def __init__(self, message: str, code: str = "RETRIEVAL_ERROR") -> None:
         super().__init__(message)
         self.message = message
@@ -82,7 +70,6 @@ class Candidate:
 
 
 def query_terms(query: str) -> tuple[str, ...]:
-    """中英文混合的轻量词项：英文词 + 中文单字与二元组。"""
     lowered = query.lower()
     terms = set(_ASCII_WORD.findall(lowered))
     cjk = _CJK_CHAR.findall(lowered)
@@ -104,7 +91,6 @@ def search_chunks(
     rrf_k: int = DEFAULT_RRF_K,
     min_similarity: float = DEFAULT_MIN_SIMILARITY,
 ) -> list[Candidate]:
-    """在指定论文范围内检索片段候选。"""
     query = (query or "").strip()
     if not query:
         raise RetrievalError("查询不能为空", "EMPTY_QUERY")
@@ -119,7 +105,7 @@ def search_chunks(
     if not scope:
         raise RetrievalError("所选论文不存在或不可用", "NO_SCOPE")
 
-    # 只取当前修订的 chunk_id 用于范围过滤，不再把全部正文读进内存。
+
     current_ids: dict[str, set[str]] = {
         paper.id: set(_current_chunk_ids(conn, settings, paper))
         for paper in scope
@@ -146,7 +132,7 @@ def search_chunks(
     fused = _fusion_scores(routes, rrf_k=rrf_k)
     if not fused:
         return []
-    # 融合后只回表取候选正文（最多 per_route × 2 条），用于 snippet 与可选规则加权。
+
     chunk_map = storage.get_chunks_by_ids(conn, tuple(fused))
     return _build_candidates(
         fused,
@@ -155,9 +141,6 @@ def search_chunks(
         boost_terms=query_terms(query),
         term_boost=getattr(settings, "retrieval_term_boost", 0.0),
     )
-
-
-# ---------------------------------------------------------------- 内部
 
 
 def _resolve_scope(
@@ -245,13 +228,11 @@ def _keyword_route(
     paper_ids: list[str],
     per_route: int,
 ) -> list[str]:
-    """关键词路：jieba 分词 + BM25（索引按论文修订自动构建/复用）。"""
     try:
         return keyword.keyword_search(
             conn, settings, query, paper_ids, top_k=per_route
         )
     except keyword.KeywordIndexError:
-        # 关键词索引异常不阻断整次检索：向量路仍然可用
         return []
 
 
@@ -260,7 +241,6 @@ def _fusion_scores(
     *,
     rrf_k: int,
 ) -> dict[str, dict[str, object]]:
-    """按 RRF 累加各路名次分；返回 chunk_id -> {score, routes}。"""
     fused: dict[str, dict[str, object]] = {}
     for route, ranked_ids in routes.items():
         for position, chunk_id in enumerate(ranked_ids, start=1):
@@ -278,11 +258,6 @@ def _build_candidates(
     boost_terms: tuple[str, ...] = (),
     term_boost: float = 0.0,
 ) -> list[Candidate]:
-    """对已融合候选做可选规则重排并构造返回结构（正文已按需回表）。
-
-    ``term_boost`` 默认 0，即纯 RRF；只有显式配置 RETRIEVAL_TERM_BOOST
-    （0~0.05）时才按数字/多字词命中追加小幅加分，避免隐式改变评测排序。
-    """
     terms = [term for term in boost_terms if len(term) >= 2 or term.isdigit()]
     if term_boost > 0 and terms:
         max_bonus = min(term_boost, 0.05)

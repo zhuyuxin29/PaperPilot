@@ -1,8 +1,3 @@
-"""测试用 PDF 工厂：现场生成最小 PDF，不依赖外部样例文件。
-
-只用于测试，不进入 ``paperpilot`` 包。
-"""
-
 from __future__ import annotations
 
 import io
@@ -17,7 +12,6 @@ def build_pdf(
     *,
     encrypt_password: str | None = None,
 ) -> bytes:
-    """生成最小可用 PDF；``None`` 表示无内容流的空白页。"""
     page_count = len(page_texts)
     catalog_num, pages_num = 1, 2
     page_nums = list(range(3, 3 + page_count))

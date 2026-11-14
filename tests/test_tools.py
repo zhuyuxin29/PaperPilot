@@ -1,5 +1,3 @@
-"""模块 9（tools）验收测试：白名单、参数校验、统一返回结构。"""
-
 from __future__ import annotations
 
 import tempfile

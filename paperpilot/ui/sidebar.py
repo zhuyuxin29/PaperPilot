@@ -1,5 +1,3 @@
-"""侧边栏：品牌、导入文献、当前论文与设置。"""
-
 from __future__ import annotations
 
 import os
@@ -134,9 +132,6 @@ def _render_settings(settings: Settings) -> None:
                         client.close()
 
 
-# ---------------------------------------------------------------- 欢迎页
-
-
 def _render_welcome() -> None:
     st.title("PaperPilot")
     st.markdown("#### 带证据的文献阅读助手")
@@ -157,7 +152,6 @@ def _render_welcome() -> None:
 
 
 def render_sidebar(settings, conn, pages) -> None:
-    """渲染完整侧边栏；pages 为 st.Page 列表（问答/要点/文献库）。"""
     with st.sidebar:
         st.markdown(
             '<div class="pp-brand">PaperPilot</div>'

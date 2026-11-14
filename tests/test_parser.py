@@ -1,8 +1,3 @@
-"""模块 4（parser）验收测试。
-
-测试用 PDF 由 ``tests/pdf_factory.py`` 现场生成，不依赖外部样例文件。
-"""
-
 from __future__ import annotations
 
 import io
@@ -14,7 +9,7 @@ from pathlib import Path
 from paperpilot.ingestion import parser
 from pdf_factory import build_pdf
 
-# pypdf 对损坏文件会打 warning 日志，测试里只保留错误级别，避免干扰输出
+
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 
@@ -93,7 +88,7 @@ class ParsePdfTest(ParserTestBase):
         buffer = io.BytesIO()
         try:
             writer.write(buffer)
-        except Exception:  # 生成 0 页 PDF 失败则跳过该用例
+        except Exception:
             self.skipTest("当前 pypdf 无法生成 0 页 PDF")
 
         path = self.write_pdf(buffer.getvalue(), "empty.pdf")

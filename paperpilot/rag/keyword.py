@@ -1,19 +1,3 @@
-"""关键词检索（模块 12.5）：jieba 分词 + 自实现 BM25。
-
-为什么不用 FTS5：
-- 当前语料规模小（几千片段），Python BM25 足够快，且便于单元测试；
-- 不引入 FTS5 虚拟表和查询语法转义；
-- 接口保持不变，未来可替换为 FTS5 实现。
-
-索引按“论文 + 修订”存放：
-``{data_dir}/index/paper_001.r1.jieba-v1.bm25.json``
-
-规则：
-- 入库和查询使用同一套 jieba 词典与自定义词，词典版本写入索引；
-- IDF 在**本次检索的论文范围**内统计（跨论文比较不偏）；
-- 返回 chunk_id 排名，最终与向量路 RRF 融合。
-"""
-
 from __future__ import annotations
 
 import json
@@ -82,7 +66,6 @@ class KeywordIndex:
 
 
 def tokenize(text: str) -> list[str]:
-    """jieba 切词，过滤标点/空白，保留中文词与英文/数字词。"""
     text = _CJK_LINEBREAK.sub("", text)
     tokens: list[str] = []
     for raw in jieba.lcut(text):
@@ -104,7 +87,6 @@ def index_path(settings: Settings, paper_id: str, revision: int) -> Path:
 
 
 def _replace_with_retry(source: Path, target: Path, attempts: int = 5) -> None:
-    """Windows 上目标文件可能被杀毒/索引服务短暂占用，重试替换。"""
     last_error: PermissionError | None = None
     for attempt in range(attempts):
         try:
@@ -178,7 +160,6 @@ def build_keyword_index(
 def _read_keyword_file(
     path_text: str, mtime_ns: int, size: int
 ) -> KeywordIndex | None:
-    """按（路径, mtime, 大小）缓存 BM25 索引，避免 Agent 多轮检索反复读 JSON。"""
     try:
         payload = json.loads(Path(path_text).read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -218,7 +199,6 @@ def keyword_search(
     *,
     top_k: int = 20,
 ) -> list[str]:
-    """返回按 BM25 排序的 chunk_id；索引缺失时自动构建。"""
     terms = tokenize(query)
     if not terms or top_k <= 0:
         return []
@@ -272,7 +252,6 @@ def keyword_search(
 
 
 def main() -> None:
-    """python -m paperpilot.rag.keyword [paper_id ...]：构建关键词索引。"""
     import sys
 
     from ..config import load_settings

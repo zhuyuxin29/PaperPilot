@@ -1,5 +1,3 @@
-"""模块 3（storage）验收测试。"""
-
 from __future__ import annotations
 
 import sqlite3
@@ -132,7 +130,7 @@ class DocumentTest(StorageTestBase):
         paper = make_paper()
         pages = make_pages()
         chunks = make_chunks()
-        # 第二段与第一段 ordinal 冲突（UNIQUE(paper_id, revision, ordinal)）
+
         chunks[1] = chunks[1].model_copy(update={"ordinal": 0})
 
         with self.assertRaises(sqlite3.IntegrityError):

@@ -1,5 +1,3 @@
-"""Agent 状态：一次问答执行过程中需要保存的内容。"""
-
 from __future__ import annotations
 
 from dataclasses import dataclass, field

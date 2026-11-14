@@ -1,5 +1,3 @@
-"""模块 5（chunker）验收测试。"""
-
 from __future__ import annotations
 
 import unittest

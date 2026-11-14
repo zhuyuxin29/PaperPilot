@@ -1,8 +1,3 @@
-"""read_passages 工具：回读原文并登记本次运行的证据。
-
-这是唯一能产生 ``evidence_id`` 的工具；模型回答里的引用只能来自这里。
-"""
-
 from __future__ import annotations
 
 from pydantic import BaseModel, ConfigDict, Field
