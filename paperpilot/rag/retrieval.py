@@ -23,6 +23,7 @@ DEFAULT_RRF_K = 60
 DEFAULT_MIN_SIMILARITY = 0.0
 
 
+# 按论文+修订缓存 chunk_id 集合，避免 Agent 每轮检索都查库。
 _CURRENT_IDS_CACHE: "OrderedDict[tuple[str, str, int, str], frozenset[str]]" = (
     OrderedDict()
 )

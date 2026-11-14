@@ -191,6 +191,7 @@ def _finalize_pending(settings: Settings) -> None:
         if claims:
             graph_claims.extend(claims)
 
+    # fragment 与页面可能不在同一线程，SQLite 连接现开现关。
     conn = storage.connect(settings.db_path)
     try:
         paper = storage.get_paper(conn, paper_id)

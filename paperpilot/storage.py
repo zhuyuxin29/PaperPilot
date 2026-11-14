@@ -124,6 +124,7 @@ def ensure_schema(conn: sqlite3.Connection) -> int:
         )
     else:
         version = int(row["value"])
+        # 不自动迁移旧库，结构不一致时宁可报错。
         if version > SCHEMA_VERSION:
             raise SchemaVersionError(
                 f"数据库结构版本 {version} 高于代码支持的 {SCHEMA_VERSION}，"

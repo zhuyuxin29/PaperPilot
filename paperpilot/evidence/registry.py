@@ -15,6 +15,7 @@ class EvidenceRecord:
     quote: str
 
 
+# 只有 read_passages 会往这里写；检索候选不注册。
 class EvidenceRegistry:
     def __init__(self) -> None:
         self._records: dict[str, EvidenceRecord] = {}

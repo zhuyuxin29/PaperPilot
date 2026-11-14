@@ -19,6 +19,7 @@ _BATCH_SIZE = 32
 
 
 _SESSION = requests.Session()
+# 只重试限流和暂时性 5xx，其余 4xx 直接返回给上层。
 _RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 _MAX_ATTEMPTS = 3
 _BACKOFF_BASE = 0.15
